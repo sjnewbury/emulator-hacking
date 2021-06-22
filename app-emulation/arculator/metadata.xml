@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "http://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>steve@snewbury.org.uk</email>
+		<name>Steven Newbury</name>
+	</maintainer>
+	<longdescription>
+		ARCulator (stands for Archimedes Emulator) is an open-source,
+		low-level Acorn Archimedes emulator developed for Windows
+		and Linux by Sarah Walker.
+	</longdescription>
+	<upstream>
+		<remote-id type="github">sarah-walker-pcem/arculator</remote-id>
+	</upstream>
+</pkgmetadata>

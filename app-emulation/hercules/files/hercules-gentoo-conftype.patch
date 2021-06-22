@@ -1,0 +1,29 @@
+--- ./CMakeLists.txt~	2018-06-16 08:53:05.000000000 +0100
++++ ./CMakeLists.txt	2018-06-16 11:17:34.598751440 +0100
+@@ -137,15 +137,17 @@
+     message( STATUS "Single configuration generator; configuring for ${CMAKE_BUILD_TYPE}" )
+ 
+ else( )
+-    # For generators that support multiple configurations with build-time
+-    # configuration selection (Visual Studio or mac OS Xcode), CMake
+-    # defaults to four configurations: Release, Debug, MinSizeRel, and
+-    # RelWithDebInfo.  For now, only the first two are needed.  Remove the
+-    # other two.
+-    list( REMOVE_ITEM CMAKE_CONFIGURATION_TYPES
+-                MinSizeRel
+-                RelWithDebInfo
+-                )
++    if ( WIN32 OR APPLE )
++        # For generators that support multiple configurations with build-time
++        # configuration selection (Visual Studio or mac OS Xcode), CMake
++        # defaults to four configurations: Release, Debug, MinSizeRel, and
++        # RelWithDebInfo.  For now, only the first two are needed.  Remove the
++        # other two.
++        list( REMOVE_ITEM CMAKE_CONFIGURATION_TYPES
++                    MinSizeRel
++                    RelWithDebInfo
++                    )
++    endif( )
+     message ( STATUS "Available configuration Types: ${CMAKE_CONFIGURATION_TYPES}"  )
+ endif( )
+ 

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "http://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>steve@snewbury.org.uk</email>
+		<name>Steven Newbury</name>
+	</maintainer>
+	<longdescription>
+		b-em is an Acorn BBC Micro emulator
+		
+		It support a wide range of hardware, including
+		an impressive list of Tube Secondary Processors.
+	</longdescription>
+</pkgmetadata>

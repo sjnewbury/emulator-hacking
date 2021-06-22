@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "http://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>steve@snewbury.org.uk</email>
+		<name>Steven Newbury</name>
+	</maintainer>
+	<longdescription>
+		ksm is a utility for configuring and activating
+		the Linux Same-Page Merging mechanism.
+	</longdescription>
+</pkgmetadata>

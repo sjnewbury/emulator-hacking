@@ -1,0 +1,20 @@
+--- ./qb/qb.params.sh~	2019-05-14 22:19:14.000000000 +0100
++++ ./qb/qb.params.sh	2019-05-14 22:21:20.914260787 +0100
+@@ -62,7 +62,7 @@
+ 	err="$2"
+ 	eval "set -- $OPTS"
+ 	for OPT do [ "$opt" = "$OPT" ] && return; done
+-	die 1 "Unknown option $err"
++	echo "Unknown option $err"
+ }
+ 
+ parse_input() # Parse stuff :V
+@@ -106,7 +106,7 @@
+ 			-h|--help) print_help; exit 0;;
+ 			--) break ;;
+ 			'') : ;;
+-			*) die 1 "Unknown option $1";;
++			*) echo "Unknown option $1";;
+ 		esac
+ 		shift
+ 	done

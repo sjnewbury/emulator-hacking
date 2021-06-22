@@ -1,0 +1,189 @@
+--- ./dep/CMakeLists.txt~
++++ ./dep/CMakeLists.txt
+@@ -1,13 +1,9 @@
++find_package(PkgConfig REQUIRED)
++
+ add_subdirectory(glad)
+-add_subdirectory(libcue)
+ add_subdirectory(stb)
+-add_subdirectory(zlib)
+-add_subdirectory(minizip)
+ add_subdirectory(lzma)
+-add_subdirectory(libFLAC)
+ add_subdirectory(libchdr)
+-add_subdirectory(xxhash)
+-add_subdirectory(rapidjson)
+ add_subdirectory(glslang)
+ add_subdirectory(vulkan-loader)
+ if(NOT BUILD_LIBRETRO_CORE)
+@@ -18,6 +14,14 @@
+   add_subdirectory(tinyxml2)
+ endif()
+ 
++pkg_check_modules(LIBCUE REQUIRED libcue)
++pkg_check_modules(ZLIB REQUIRED zlib)
++pkg_check_modules(MINIZIP REQUIRED minizip)
++pkg_check_modules(LIBFLAC REQUIRED flac)
++pkg_check_modules(XXHASH REQUIRED libxxhash)
++pkg_check_modules(RAPIDJSON REQUIRED RapidJSON)
++pkg_check_modules(SAMPLERATE REQUIRED samplerate)
++
+ set(LIBSAMPLERATE_ENABLE_SINC_BEST_CONVERTER OFF)
+ add_subdirectory(libsamplerate)
+ 
+--- ./src/common/CMakeLists.txt~	2020-11-06 10:22:07.000000000 +0000
++++ ./src/common/CMakeLists.txt	2020-11-06 10:37:59.198909608 +0000
+@@ -1,4 +1,4 @@
+-add_library(common
++add_library(common STATIC
+   align.h
+   assert.cpp
+   assert.h
+@@ -118,9 +118,10 @@
+   target_compile_definitions(common PRIVATE "-DUSE_CRASHHANDLER=1")
+ endif()
+ 
+-target_include_directories(common PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
++target_include_directories(common PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.." ${LIBCUE_INCLUDE_DIRS} ${ZLIB_INCLUDE_DIRS} ${MINIZIP_INCLUDE_DIRS} ${SAMPLERATE_INCLUDE_DIRS})
+ target_include_directories(common PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
+-target_link_libraries(common PRIVATE glad libcue stb Threads::Threads libchdr glslang vulkan-loader zlib minizip samplerate)
++target_link_libraries(common PRIVATE glad stb Threads::Threads libchdr glslang vulkan-loader)
++target_link_libraries(common PUBLIC ${LIBCUE_LIBRARIES} ${ZLIB_LIBRARIES} ${MINIZIP_LIBRARIES} ${SAMPLERATE_LIBRARIES})
+ 
+ if(WIN32)
+   target_sources(common PRIVATE
+--- ./src/updater/CMakeLists.txt~	2020-11-06 10:22:07.000000000 +0000
++++ ./src/updater/CMakeLists.txt	2020-11-06 10:40:07.478297307 +0000
+@@ -3,7 +3,8 @@
+   updater.h
+ )
+ 
+-target_link_libraries(updater PRIVATE common minizip zlib)
++target_link_libraries(updater PRIVATE common)
++target_link_libraries(updater PUBLIC ${MINILIB_LIBRARIES} ${ZLIB_LIBRARIES})
+ 
+ if(WIN32)
+   target_sources(updater PRIVATE
+--- ./src/core/CMakeLists.txt~	2020-11-06 11:22:18.000000000 +0000
++++ ./src/core/CMakeLists.txt	2020-11-06 12:24:10.360719583 +0000
+@@ -1,4 +1,4 @@
+-add_library(core
++add_library(core STATIC
+     analog_controller.cpp
+     analog_controller.h
+     bios.cpp
+--- ./src/scmversion/CMakeLists.txt~	2020-11-06 12:25:01.000000000 +0000
++++ ./src/scmversion/CMakeLists.txt	2020-11-06 12:26:31.087037972 +0000
+@@ -8,7 +8,7 @@
+                      COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/gen_scmversion.sh")
+ endif()
+ 
+-add_library(scmversion
++add_library(scmversion STATIC
+   scmversion.cpp
+   scmversion.h
+ )
+--- ./dep/stb/CMakeLists.txt~	2020-11-06 12:25:01.000000000 +0000
++++ ./dep/stb/CMakeLists.txt	2020-11-06 12:27:53.618788624 +0000
+@@ -7,7 +7,7 @@
+   src/stb_image_write.c
+ )
+ 
+-add_library(stb ${SRCS})
++add_library(stb STATIC ${SRCS})
+ target_include_directories(stb PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include" "${CMAKE_CURRENT_SOURCE_DIR}/src")
+ target_include_directories(stb INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+ target_link_libraries(stb Threads::Threads "${CMAKE_DL_LIBS}")
+--- ./dep/glad/CMakeLists.txt~	2020-11-06 12:25:01.000000000 +0000
++++ ./dep/glad/CMakeLists.txt	2020-11-06 12:28:37.716390666 +0000
+@@ -6,7 +6,7 @@
+ if(APPLE)
+   add_library(glad OBJECT ${SRCS})
+ else()
+-  add_library(glad ${SRCS})
++  add_library(glad STATIC ${SRCS})
+ endif()
+ 
+ target_include_directories(glad PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+--- ./dep/vulkan-loader/CMakeLists.txt~	2020-11-06 12:25:01.000000000 +0000
++++ ./dep/vulkan-loader/CMakeLists.txt	2020-11-06 12:29:19.853951133 +0000
+@@ -22,7 +22,7 @@
+ 	src/vulkan_loader.cpp
+ )
+ 
+-add_library(vulkan-loader ${SRCS})
++add_library(vulkan-loader STATIC ${SRCS})
+ target_include_directories(vulkan-loader PUBLIC  "${CMAKE_CURRENT_SOURCE_DIR}/include")
+ target_link_libraries(vulkan-loader PRIVATE ${CMAKE_DL_LIBS})
+ 
+--- ./dep/lzma/CMakeLists.txt~	2020-11-06 12:43:49.000000000 +0000
++++ ./dep/lzma/CMakeLists.txt	2020-11-06 13:18:36.536667363 +0000
+@@ -1,4 +1,4 @@
+-add_library(lzma
++add_library(lzma STATIC
+   include/7zTypes.h
+   include/Alloc.h
+   include/Bra.h
+--- ./dep/glslang/CMakeLists.txt~	2020-11-06 13:25:53.000000000 +0000
++++ ./dep/glslang/CMakeLists.txt	2020-11-06 13:26:11.122976597 +0000
+@@ -43,7 +43,7 @@
+ 	StandAlone/resource_limits_c.cpp
+ )
+ 
+-add_library(glslang ${SRCS})
++add_library(glslang STATIC ${SRCS})
+ 
+ if(WIN32)
+   target_sources(glslang PRIVATE glslang/OSDependent/Windows/ossource.cpp)
+--- ./dep/libchdr/CMakeLists.txt.orig	2020-12-23 11:00:48.269487702 +0000
++++ ./dep/libchdr/CMakeLists.txt	2020-12-23 11:03:23.346102614 +0000
+@@ -1,4 +1,4 @@
+-add_library(libchdr
++add_library(libchdr STATIC
+   include/libchdr/bitstream.h
+   include/libchdr/cdrom.h
+   include/libchdr/chd.h
+@@ -13,6 +13,6 @@
+   src/libchdr_huffman.c
+ )
+ 
+-target_include_directories(libchdr PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+-target_link_libraries(libchdr PRIVATE zlib lzma libFLAC)
++target_include_directories(libchdr PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include" ${ZLIB_INCLUDE_DIRS} ${LIBFLAC_INCLUDE_DIRS})
++target_link_libraries(libchdr PRIVATE ${ZLIB_LIBRARIES} lzma ${LIBFLAC_LIBRARIES})
+ 
+--- ./src/frontend-common/CMakeLists.txt.orig	2020-12-23 11:00:48.272821107 +0000
++++ ./src/frontend-common/CMakeLists.txt	2020-12-23 11:04:13.273825776 +0000
+@@ -1,4 +1,4 @@
+-add_library(frontend-common
++add_library(frontend-common STATIC
+   game_settings.cpp
+   game_settings.h
+   opengl_host_display.cpp
+--- ./src/core/CMakeLists.txt~	2021-01-05 12:49:00.000000000 +0000
++++ ./src/core/CMakeLists.txt	2021-01-05 13:21:43.369904521 +0000
+@@ -112,8 +112,8 @@
+ )
+ 
+ target_include_directories(core PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
+-target_include_directories(core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
+-target_link_libraries(core PUBLIC Threads::Threads common zlib vulkan-loader)
+-target_link_libraries(core PRIVATE glad stb xxhash)
++target_include_directories(core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/.." ${ZLIB_INCLUDE_DIRS} ${XXHASH_INCLUDE_DIRS})
++target_link_libraries(core PUBLIC Threads::Threads common ${ZLIB_LIBRARIES} ${XXHASH_LIBRARIES} vulkan-loader)
++target_link_libraries(core PRIVATE glad stb)
+ 
+ if(WIN32)
+--- ./dep/discord-rpc/CMakeLists.txt~	2021-01-17 13:35:57.000000000 +0000
++++ ./dep/discord-rpc/CMakeLists.txt	2021-01-17 13:39:52.633748179 +0000
+@@ -12,8 +12,8 @@
+ )
+ 
+ add_library(discord-rpc ${SRCS})
+-target_include_directories(discord-rpc PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+-target_link_libraries(discord-rpc rapidjson)
++target_include_directories(discord-rpc PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include" ${RAPIDJSON_INCLUDE_DIRS})
++target_link_libraries(discord-rpc ${RAPIDJSON_LIBRARIES})
+ 
+ if(WIN32)
+   target_sources(discord-rpc PRIVATE

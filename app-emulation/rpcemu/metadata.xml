@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "http://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>steve@snewbury.org.uk</email>
+		<name>Steven Newbury</name>
+	</maintainer>
+	<longdescription>
+		RPCemu (an acronym for "RiscPC" emulator) is an open-source,
+		low-level Acorn RiscPC/A7000 emulator developed for Windows and
+		Linux originally by Sarah Walker.
+
+		The RiscPC was the penultimate Acorn desktop computer
+		based around the ARM CPU architecture (which Sophie Wilson and
+		Steve Furber invented at Acorn in 1983-1984).  It was
+		compatible with processors from the ARM610 to the SA110
+		StrongARM from DEC.  It was followed by the less upgradable
+		entry-level 32 MHz ARM7500(FE) system-on-a-chip based A7000(+).
+
+		There is also emulation of the RiscPC2 (codename Pheobe)
+		which was terminated shortly before going to market as
+		Acorn began to be asset striped before liquidation.
+	</longdescription>
+</pkgmetadata>

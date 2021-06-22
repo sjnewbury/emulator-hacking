@@ -1,0 +1,11 @@
+--- a/configure.ac
++++ b/configure.ac
+@@ -21,8 +21,6 @@
+    CXXFLAGS="-Wall -O0 -g -D_DEBUG -DDEBUG_LOG"
+    AC_MSG_RESULT([yes])
+ else
+-   CFLAGS="-O3"
+-   CXXFLAGS="-O3"
+    AC_MSG_RESULT([no])
+ fi
+ 

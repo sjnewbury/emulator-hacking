@@ -1,0 +1,696 @@
+--- a/src/cmos.c	Wed May 06 20:17:33 2020 +0100
++++ b/src/cmos.c	Tue Sep 22 16:31:51 2020 +0100
+@@ -173,19 +173,29 @@
+ {
+         char fn[512];
+         FILE *cmosf;
++	char **datadirs;
++	char **dirptr;
++	
++	datadirs = rpcemu_get_datadir();
+ 
+-        /* Append "cmos.ram" to the given executable path */
+-	snprintf(fn, sizeof(fn), "%scmos.ram", rpcemu_get_datadir());
+-        cmosf = fopen(fn, "rb");
++        /* For each datadir, append "cmos.ram" to the path */
++        for (dirptr = datadirs; *dirptr; dirptr++)
++        {
++		snprintf(fn, sizeof(fn), "%scmos.ram", *dirptr);
++		cmosf = fopen(fn, "rb");
+ 
+-        if (cmosf) {
+-                /* File open suceeded, load CMOS data */
+-                if (fread(cmosram, 1, 256, cmosf) != 256) {
+-                        fatal("Unable to read from CMOS file '%s', %s", fn,
+-                              strerror(errno));
+-                }
+-                fclose(cmosf);
+-        } else {
++	        if (cmosf) {
++	                /* File open suceeded, load CMOS data */
++	                if (fread(cmosram, 1, 256, cmosf) != 256) {
++	                        fatal("Unable to read from CMOS file '%s', %s", fn,
++	                              strerror(errno));
++	                }
++	                fclose(cmosf);
++	                break;
++		}
++	}
++
++        if (!cmosf) {
+                 /* Report failure and initialise the array */
+                 fprintf(stderr, "Could not open CMOS file '%s': %s\n", fn, 
+                         strerror(errno));
+@@ -219,19 +229,25 @@
+ savecmos(void)
+ {
+         char fn[512];
+-        FILE *cmosf;
++        FILE *cmosf = NULL;
++	char **datadirs;
+ 
+-	snprintf(fn, sizeof(fn), "%scmos.ram", rpcemu_get_datadir());
+-        cmosf = fopen(fn, "wb");
++	/* Get first entry which should resolve tothe  user home config dir */
++        datadirs = rpcemu_get_datadir();
++
++        /* For each datadir, append "cmos.ram" to the path */
++	snprintf(fn, sizeof(fn), "%scmos.ram", datadirs[0]);
++
++	cmosf = fopen(fn, "wb");
+ 
+         if (cmosf) {
+                 if(fwrite(cmosram, 256, 1, cmosf) != 1) {
+-                        fatal("Unable to write CMOS file '%s': %s", fn,
+-                              strerror(errno));
+-                        // TODO does it have to be fatal?
++                	fatal("Unable to write CMOS file '%s': %s", fn,
++			strerror(errno));
++			// TODO does it have to be fatal?
+                 }
+                 fclose(cmosf);
+-        } else {
++	} else {
+                 fprintf(stderr, "Could not open CMOS file '%s' for writing: %s\n", fn,
+                         strerror(errno));
+         }
+diff -r 00a162d7e6cd src/hostfs.c
+--- a/src/hostfs.c	Wed May 06 20:17:33 2020 +0100
++++ b/src/hostfs.c	Tue Sep 22 16:31:51 2020 +0100
+@@ -2092,8 +2092,21 @@
+ hostfs_init(void)
+ {
+   int c;
++  char **datadirs;
++  char **dirptr;
++  struct stat sb;
+ 
+-  snprintf(HOSTFS_ROOT, sizeof(HOSTFS_ROOT), "%shostfs", rpcemu_get_datadir());
++  datadirs = rpcemu_get_datadir();
++
++  for (dirptr = datadirs; *dirptr; dirptr++)
++  {
++    snprintf(HOSTFS_ROOT, 512 * sizeof(char), "%shostfs", *dirptr);
++    if (stat(HOSTFS_ROOT, &sb)) {
++      if (errno == ENOENT)
++        continue;
++    } else if S_ISDIR(sb.st_mode)
++        break;
++  }
+   for (c = 0; c < 511; c++) {
+     if (HOSTFS_ROOT[c] == '\\') {
+       HOSTFS_ROOT[c] = '/';
+diff -r 00a162d7e6cd src/ide.c
+--- a/src/ide.c	Wed May 06 20:17:33 2020 +0100
++++ b/src/ide.c	Tue Sep 22 16:31:51 2020 +0100
+@@ -31,6 +31,7 @@
+ #include <string.h>
+ 
+ #include <sys/types.h>
++#include <sys/stat.h>
+ 
+ #include "rpcemu.h"
+ #include "vidc20.h"
+@@ -312,29 +313,47 @@
+ loadhd(int d, const char *filename)
+ {
+ 	char pathname[512];
++	char **datadirs;
++	char **dirptr;
++	struct stat sb;
++	
++	datadirs = rpcemu_get_datadir();
+ 
+-	snprintf(pathname, sizeof(pathname), "%s%s", rpcemu_get_datadir(), filename);
+-
+-	if (ide.hdfile[d] == NULL) {
++	/* For each datadir, append filename to the path */
++	for (dirptr = datadirs; *dirptr; dirptr++)
++	{
++		snprintf(pathname, sizeof(pathname), "%s%s", *dirptr, filename);
+ 		/* Try to open existing hard disk image */
+ 		ide.hdfile[d] = fopen64(pathname, "rb+");
+ 		if (ide.hdfile[d] == NULL) {
+-			/* Failed to open existing hard disk image */
+-			if (errno == ENOENT) {
+-				/* Failed because it does not exist,
+-				   so try to create new file */
+-				ide.hdfile[d] = fopen64(pathname, "wb+");
+-				if (ide.hdfile[d] == NULL) {
+-					fatal("Cannot create file '%s': %s",
+-					      pathname, strerror(errno));
+-				}
+-			} else {
++		        if (errno == ENOENT) {
++        		        /* Failed: no file, try next path */
++		                continue;
++		        } else {
+ 				/* Failed for another reason */
+ 				fatal("Cannot open file '%s': %s",
+ 				      pathname, strerror(errno));
+ 			}
++                }
++                        break;
++        }
++
++	if (ide.hdfile[d] == NULL) {
++       		snprintf(pathname, sizeof(pathname), "%s%s", datadirs[0], filename);
++       		/* 
++       		   Already failed to open existing hard disk image, so skip
++		   any existing files
++	         */
++	        if (stat(pathname, &sb)) {
++		        if (errno == ENOENT) {
++       				/* Does not exist, so try to create new file */
++        			ide.hdfile[d] = fopen64(pathname, "wb+");
++	        		if (ide.hdfile[d] == NULL)
++	        		        fatal("Cannot create file '%s': %s",
++	        		                pathname, strerror(errno));
++                        }
+ 		}
+-	}
++        }
+ 
+         fseek(ide.hdfile[d], 0xfc1, SEEK_SET);
+         ide.spt[d] = getc(ide.hdfile[d]);
+diff -r 00a162d7e6cd src/podulerom.c
+--- a/src/podulerom.c	Wed May 06 20:17:33 2020 +0100
++++ b/src/podulerom.c	Tue Sep 22 16:31:51 2020 +0100
+@@ -34,7 +34,7 @@
+ #include "podulerom.h"
+ 
+ #define MAXROMS 16
+-static char romfns[MAXROMS + 1][256];
++static char romfns[MAXROMS + 1][2048];
+ 
+ static uint8_t *podulerom = NULL;
+ static uint32_t poduleromsize = 0;
+@@ -109,39 +109,52 @@
+ {
+ 	int file = 0;
+ 	int i;
+-	char romdirectory[512];
+-	DIR *dir;
+ 	const struct dirent *d;
+-
+-	/* Build podulerom directory path */
+-	snprintf(romdirectory, sizeof(romdirectory), "%spoduleroms/", rpcemu_get_datadir());
++	char **datadirs;
++	char **dirptr;
++	
++	datadirs = rpcemu_get_datadir();
+ 
+ 	if (podulerom != NULL) {
+ 		free(podulerom);
+ 	}
+ 	poduleromsize = 0;
+ 
+-	/* Scan directory for podule files */
+-	dir = opendir(romdirectory);
+-	if (dir != NULL) {
+-		while ((d = readdir(dir)) != NULL && file < MAXROMS) {
+-			const char *ext = rpcemu_file_get_extension(d->d_name);
+-			char filepath[512];
+-			struct stat buf;
++	/* For each datadir, append filename to the path */
++	for (dirptr = datadirs; *dirptr; dirptr++)
++	{
++		size_t buflen = (strlen(*dirptr) + 12) * sizeof(char);
++		char *romdirectory = malloc(buflen);
++
++		/* Build podulerom directory path */
++		snprintf(romdirectory, buflen, "%spoduleroms/", *dirptr);
+ 
+-			snprintf(filepath, sizeof(filepath), "%s%s", romdirectory, d->d_name);
++		/* Scan directory for podule files */
++		DIR *dir = opendir(romdirectory);
++		if (dir != NULL) {
++			while ((d = readdir(dir)) != NULL && file < MAXROMS) {
++				const char *ext = rpcemu_file_get_extension(d->d_name);
++				buflen = (strlen(romdirectory) + strlen(d->d_name) +1) * sizeof(char);
++				char *filepath = malloc(buflen);
++				struct stat buf;
+ 
+-			if (stat(filepath, &buf) == 0) {
+-				/* Skip directories or files with a .txt extension or starting with '.' */
+-				if (S_ISREG(buf.st_mode) && (strcasecmp(ext, "txt") != 0) && d->d_name[0] != '.') {
+-					strcpy(romfns[file++], d->d_name);
++				snprintf(filepath, buflen, "%s%s", romdirectory, d->d_name);
++
++				if (stat(filepath, &buf) == 0) {
++					/* Skip directories or files with a .txt extension or starting with '.' */
++					if (S_ISREG(buf.st_mode) && (strcasecmp(ext, "txt") != 0) && d->d_name[0] != '.') {
++						strcpy(romfns[file++], filepath);
++					}
+ 				}
++				free(filepath);
+ 			}
++			closedir(dir);
+ 		}
+-		closedir(dir);
+-	} else {
+-		rpclog("Could not open podulerom directory '%s': %s\n",
+-		      romdirectory, strerror(errno));
++		free(romdirectory);
++	}
++
++	if (file == 0) {
++		rpclog("Could not find any poduleroms in search paths\n");
+ 	}
+ 
+ 	/* Build podulerom header */
+@@ -170,12 +183,9 @@
+ 	/* Add each file into the podule's rom */
+ 	for (i = 0; i < file; i++) {
+ 		FILE *f;
+-		char filepath[512];
+ 		long len;
+ 
+-		snprintf(filepath, sizeof(filepath), "%s%s", romdirectory, romfns[i]);
+-
+-		f = fopen(filepath, "rb");
++		f = fopen(romfns[i], "rb");
+ 		if (f == NULL) {
+ 			fatal("initpodulerom: Can't open podulerom file '%s': '%s'", romfns[i], strerror(errno));
+ 		}
+diff -r 00a162d7e6cd src/qt5/rpcemu.pro
+--- a/src/qt5/rpcemu.pro	Wed May 06 20:17:33 2020 +0100
++++ b/src/qt5/rpcemu.pro	Tue Sep 22 16:31:51 2020 +0100
+@@ -50,7 +50,7 @@
+ 		../podules.c \
+ 		../podulerom.c \
+ 		../icside.c \
+-		../rpc-machdep.c \
++		../rpc-machdep-xdg.c \
+ 		../arm_common.c \
+ 		../i8042.c \
+ 		settings.cpp \
+@@ -189,4 +189,4 @@
+ 	TARGET = $$join(TARGET, , , -debug)
+ }
+ 
+-LIBS +=
++LIBS += -lxdg-basedir
+diff -r 00a162d7e6cd src/qt5/settings.cpp
+--- a/src/qt5/settings.cpp	Wed May 06 20:17:33 2020 +0100
++++ b/src/qt5/settings.cpp	Tue Sep 22 16:31:51 2020 +0100
+@@ -18,6 +18,7 @@
+   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+  */
+ #include <QSettings>
++#include <QFile>
+ 
+ #include "rpcemu.h"
+ 
+@@ -39,10 +40,23 @@
+ 	int i;
+ 	QString sText;
+ 	QByteArray ba;
++	char **datadirs;
++	char **dirptr;
++	
++	datadirs = rpcemu_get_datadir();
++
++	/* For each datadir, append "rpc.cfg" to the path */
++	for (dirptr = datadirs; *dirptr; dirptr++)
++       {
++		snprintf(filename, sizeof(filename), "%srpc.cfg", *dirptr);
++		if (QFile(filename).exists())
++			break;
++	}
+ 
+-	snprintf(filename, sizeof(filename), "%srpc.cfg", rpcemu_get_datadir());
++	QSettings settings(filename, QSettings::IniFormat);
+ 
+-	QSettings settings("rpc.cfg", QSettings::IniFormat);
++	if (settings.fileName() == NULL)
++		return;
+ 
+ 	/* Copy the contents of the configfile to the log */
+ 	QStringList keys = settings.childKeys();
+@@ -196,11 +210,18 @@
+ {
+ 	char filename[512];
+ 	QString sText;
++	char **datadirs;
++		
++	datadirs = rpcemu_get_datadir();
+ 
+-	snprintf(filename, sizeof(filename), "%srpc.cfg", rpcemu_get_datadir());
++	/* For default datadir, append "rpc.cfg" to the path */
++	snprintf(filename, sizeof(filename), "%srpc.cfg", datadirs[0]);
+ 
+-	QSettings settings("rpc.cfg", QSettings::IniFormat);
++	QSettings settings(filename, QSettings::IniFormat);
+ 
++	if (!settings.isWritable())
++		return;
++	
+ 	char s[256];
+ 
+ 	sprintf(s, "%u", config->mem_size);
+diff -r 00a162d7e6cd src/romload.c
+--- a/src/romload.c	Wed May 06 20:17:33 2020 +0100
++++ b/src/romload.c	Tue Sep 22 16:31:51 2020 +0100
+@@ -19,6 +19,7 @@
+  */
+ 
+ /* ROM loader */
++#define _GNU_SOURCE         /* See feature_test_macros(7) */
+ #include <errno.h>
+ #include <stdint.h>
+ #include <stdio.h>
+@@ -29,6 +30,8 @@
+ #include <sys/stat.h>
+ #include <sys/types.h>
+ 
++#include <string.h>
++
+ #include "rpcemu.h"
+ #include "mem.h"
+ #include "romload.h"
+@@ -108,7 +111,7 @@
+         const char * const *pstr1 = p1;
+         const char * const *pstr2 = p2;
+ 
+-        return strcmp(*pstr1, *pstr2);
++        return strcmp(basename(*pstr1), basename(*pstr2));
+ }
+ 
+ /**
+@@ -121,45 +124,53 @@
+         int pos = 0;
+         const char *dirname = "roms";
+         char *romfilenames[MAXROMS];
+-	char romdirectory[512];
+-	DIR *dir;
+ 	const struct dirent *d;
+-
+-	/* Build rom directory path */
+-	snprintf(romdirectory, sizeof(romdirectory), "%s%s/", rpcemu_get_datadir(), dirname);
++	char **datadirs;
++	char **dirptr;
++	
++	datadirs = rpcemu_get_datadir();
+ 
+-	/* Scan directory for ROM files */
+-	dir = opendir(romdirectory);
+-	if (dir != NULL) {
+-		while ((d = readdir(dir)) != NULL && number_of_files < MAXROMS) {
+-			const char *ext = rpcemu_file_get_extension(d->d_name);
+-			char filepath[512];
+-			struct stat buf;
++	/* For each datadir, append "cmos.ram" to the path */
++	for (dirptr = datadirs; *dirptr; dirptr++)
++	{
++		size_t buflen = (strlen(*dirptr) + strlen(dirname) + 2) * sizeof(char);
++		char *romdirectory = malloc(buflen);
++		/* Build rom directory path */
++		snprintf(romdirectory, buflen, "%s%s/", *dirptr, dirname);
++		/* Scan directory for ROM files */
++		DIR *dir = opendir(romdirectory);
++		if (dir != NULL) {
++			while ((d = readdir(dir)) != NULL && number_of_files < MAXROMS) {
++				const char *ext = rpcemu_file_get_extension(d->d_name);
++				char *filepath;
++				struct stat sb;
+ 
+-			snprintf(filepath, sizeof(filepath), "%s%s", romdirectory, d->d_name);
+-
+-			if (stat(filepath, &buf) == 0) {
+-				/* Skip directories or files with a .txt extension or starting with '.' */
+-				if (S_ISREG(buf.st_mode) && (strcasecmp(ext, "txt") != 0) && d->d_name[0] != '.') {
+-					romfilenames[number_of_files] = strdup(d->d_name);
+-					if (romfilenames[number_of_files] == NULL) {
+-						fatal("Out of memory in loadroms()");
++				buflen = (strlen(romdirectory) + strlen(d->d_name) + 1) * sizeof(char);
++				filepath = malloc(buflen);
++				snprintf(filepath, buflen, "%s%s", romdirectory, d->d_name);
++				if (stat(filepath, &sb) == 0) {
++					/* Skip directories or files with a .txt extension or starting with '.' */
++					if (S_ISREG(sb.st_mode) && (strcasecmp(ext, "txt") != 0) && d->d_name[0] != '.') {
++						romfilenames[number_of_files] = strdup(filepath);
++						if (romfilenames[number_of_files] == NULL) {
++							free(filepath);
++							free(romdirectory);
++							fatal("Out of memory in loadroms()");
++						}
++						number_of_files++;
+ 					}
+-					number_of_files++;
+ 				}
++				free(filepath);
+ 			}
++			closedir(dir);
+ 		}
+-		closedir(dir);
+-	} else {
+-		fatal("Could not open ROM files directory '%s': %s\n",
+-		      romdirectory, strerror(errno));
++		free(romdirectory);
+ 	}
+ 
+         /* Empty directory? or only .txt files? */
+         if (number_of_files == 0) {
+-                fatal("Could not load ROM files from directory '%s'\n\n"
+-                      ROM_WEB_SITE_STRING "\n",
+-                      dirname);
++                fatal("Could not load ROM files from directory\n\n"
++                      ROM_WEB_SITE_STRING "\n");
+         }
+ 
+         /* Sort filenames into alphabetical order */
+@@ -169,13 +180,10 @@
+         for (c = 0; c < number_of_files; c++) {
+                 FILE *f;
+                 long len;
+-                char filepath[512];
+ 
+-                snprintf(filepath, sizeof(filepath), "%s%s", romdirectory, romfilenames[c]);
+-
+-                f = fopen(filepath, "rb");
++                f = fopen(romfilenames[c], "rb");
+                 if (f == NULL) {
+-                        fatal("Can't open ROM file '%s': %s", filepath,
++                        fatal("Can't open ROM file '%s': %s", romfilenames[c],
+                               strerror(errno));
+                 }
+ 
+diff -r 00a162d7e6cd src/rpc-machdep.c
+--- a/src/rpc-machdep.c	Wed May 06 20:17:33 2020 +0100
++++ b/src/rpc-machdep.c	Tue Sep 22 16:31:51 2020 +0100
+@@ -19,6 +19,7 @@
+  */
+ 
+ #include <string.h>
++#include <unistd.h>
+ 
+ #include "rpcemu.h"
+ 
+@@ -26,22 +27,38 @@
+    be, but currently this version is used by Linux, all the other autoconf
+    based builds and Windows. Only Mac OS X GUI version needs to override */
+ 
+-static char datadir[512] = "./";
+ static char logpath[1024] = "";
++char **datadir = NULL;
+ 
+ /**
+  * Return the path of the data directory containing all the sub data parts
+  * used by the program, eg romload, hostfs etc.
+  *
+- * @return Pointer to static zero-terminated string of path
++ * @return Pointer to array of static zero-terminated string(s) of path(s)
+  */
+-const char *
+-rpcemu_get_datadir(void)
++char **rpcemu_get_datadir(void)
+ {
++	if (!datadir) {
++		datadir = malloc(2 * sizeof(char*));
++		datadir[0] = malloc(3 * sizeof(char));
++		strncpy(datadir[0], "./\0", 3 * sizeof(char));
++		datadir[1] = NULL;
++	}
+ 	return datadir;
+ }
+ 
+ /**
++ * Free filesystem data resource path array
++ */
++void rpcemu_free_datadir(void) {
++	char **dirptr;
++	if (datadir) {
++		for(dirptr = datadir; *dirptr; dirptr++) { free(*dirptr); }
++		free(datadir);
++	}
++}
++
++/**
+  * Return the full path to the RPCEmu log file.
+  *
+  * @return Pointer to static zero-terminated string of full path to log file
+@@ -49,9 +66,20 @@
+ const char *
+ rpcemu_get_log_path(void)
+ {
+-	if (logpath[0] == '\0') {
+-		strcpy(logpath, rpcemu_get_datadir());
+-		strcat(logpath, "rpclog.txt");
++	char **datadirs;
++	char **dirptr;
++
++	datadirs = rpcemu_get_datadir();
++
++	for (dirptr = datadirs; *dirptr; dirptr++)
++	{
++		if (access(*dirptr, W_OK) == 0) {
++			if (logpath[0] == '\0') {
++			  strcpy(logpath, *dirptr);
++			  strcat(logpath, "rpclog.txt");
++			}
++			break;
++		}
+ 	}
+ 
+ 	return logpath;
+diff -r 00a162d7e6cd src/rpcemu.c
+--- a/src/rpcemu.c	Wed May 06 20:17:33 2020 +0100
++++ b/src/rpcemu.c	Tue Sep 22 16:31:51 2020 +0100
+@@ -436,6 +436,7 @@
+         free(rom);
+         savecmos();
+         config_save(&config);
++        rpcemu_free_datadir();
+ 
+ #ifdef RPCEMU_NETWORKING
+ 	network_reset();
+diff -r 00a162d7e6cd src/rpcemu.h
+--- a/src/rpcemu.h	Wed May 06 20:17:33 2020 +0100
++++ b/src/rpcemu.h	Tue Sep 22 16:31:51 2020 +0100
+@@ -171,7 +171,8 @@
+ 
+ /* These functions can optionally be overridden by a platform. If not
+    needed to be overridden, there is a generic version in rpc-machdep.c */
+-extern const char *rpcemu_get_datadir(void);
++extern char **rpcemu_get_datadir(void);
++extern void rpcemu_free_datadir(void);
+ extern const char *rpcemu_get_log_path(void);
+ 
+ /* rpc-[linux|win].c */
+--- /dev/null	2020-09-20 22:59:01.110995488 +0100
++++ ./src/rpc-machdep-xdg.c	2020-09-22 15:29:39.557383311 +0100
+@@ -0,0 +1,113 @@
++/*
++  RPCEmu - An Acorn system emulator
++
++  Copyright (C) 2005-2010 Sarah Walker
++
++  This program is free software; you can redistribute it and/or modify
++  it under the terms of the GNU General Public License as published by
++  the Free Software Foundation; either version 2 of the License, or
++  (at your option) any later version.
++
++  This program is distributed in the hope that it will be useful,
++  but WITHOUT ANY WARRANTY; without even the implied warranty of
++  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++  GNU General Public License for more details.
++
++  You should have received a copy of the GNU General Public License
++  along with this program; if not, write to the Free Software
++  Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
++ */
++
++#include <string.h>
++#include <basedir_fs.h>
++#include <unistd.h>
++#include <sys/stat.h>
++
++#include "rpcemu.h"
++
++/* These are functions that can be overridden by platforms if need
++   be, but currently this version is used by Linux, all the other autoconf
++   based builds and Windows. Only Mac OS X GUI version needs to override */
++
++static char logpath[1024] = "";
++char **datadir = NULL;
++xdgHandle xdg;
++
++/**
++ * Return the path of the data directory containing all the sub data parts
++ * used by the program, eg romload, hostfs etc.
++ *
++ * @return Pointer to array of static zero-terminated string(s) of path(s)
++ */
++char **rpcemu_get_datadir(void)
++{
++	const char * const *dirptr;
++	size_t num_paths = 0, i = 0;
++
++	if (!datadir) {
++		struct stat buf;
++		xdgInitHandle(&xdg);
++
++		/* Determine number of elements */
++		dirptr = xdgSearchableDataDirectories(&xdg);
++		while (dirptr[num_paths] != NULL) {
++			num_paths++;
++		};
++
++		/* Create array of paths including subdir */
++		datadir = malloc((num_paths + 1) * sizeof(char*));
++	
++		while (i < num_paths) {
++			size_t buflen = (strlen(dirptr[i]) + 9) * sizeof(char);
++			datadir[i] = malloc(buflen);
++			snprintf(datadir[i], buflen, "%s/rpcemu/", dirptr[i]);
++			i++;
++		}	
++		/* NULL terminate list */
++		datadir[i] = NULL;
++
++		if (stat(datadir[0], &buf))
++			xdgMakePath(datadir[0], S_IRWXU | S_IRWXG);
++
++		xdgWipeHandle(&xdg);
++	}
++	return datadir;
++}
++
++/**
++ * Free filesystem data resource path array
++ */
++void rpcemu_free_datadir(void) {
++	char ** dirptr;
++	if (datadir) {
++		for(dirptr = datadir; *dirptr; dirptr++) { free(*dirptr); }
++		free(datadir);
++	}
++}
++
++/**
++ * Return the full path to the RPCEmu log file.
++ *
++ * @return Pointer to static zero-terminated string of full path to log file
++ */
++const char *
++rpcemu_get_log_path(void)
++{
++	char **datadirs;
++	char **dirptr;
++
++	datadirs = rpcemu_get_datadir();
++
++	for (dirptr = datadirs; *dirptr; dirptr++)
++	{
++		if (access(*dirptr, W_OK) == 0) {
++			if (logpath[0] == '\0') {
++			  strcpy(logpath, *dirptr);
++			  strcat(logpath, "rpclog.txt");
++			}
++			break;
++		}
++	}
++
++	return logpath;
++}
