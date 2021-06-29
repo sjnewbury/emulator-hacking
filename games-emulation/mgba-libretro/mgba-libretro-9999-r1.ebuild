@@ -68,7 +68,7 @@ REQUIRED_USE="
 
 DEPEND="
 	epoxy? ( media-libs/libepoxy:0= )
-	ffmpeg? ( virtual/ffmpeg:0= )
+	ffmpeg? ( media-video/ffmpeg:0= )
 	imagemagick? ( media-gfx/imagemagick:0= )
 	lzma? ( app-arch/xz-utils:0= )
 	png? ( media-libs/libpng:0= )
