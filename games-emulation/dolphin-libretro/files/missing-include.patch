@@ -1,0 +1,10 @@
+--- dolphin-libretro-9999/Source/Core/DiscIO/DiscExtractor.h~	2021-07-18 10:55:02.000000000 +0100
++++ dolphin-libretro-9999/Source/Core/DiscIO/DiscExtractor.h	2021-07-18 11:30:35.095077948 +0100
+@@ -4,6 +4,7 @@
+ 
+ #pragma once
+ 
++#include <string>
+ #include <functional>
+ #include <optional>
+ 
