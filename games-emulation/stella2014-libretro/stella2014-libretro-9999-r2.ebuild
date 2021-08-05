@@ -14,4 +14,6 @@ SLOT="0"
 
 DEPEND=""
 RDEPEND="${DEPEND}
-		games-emulation/libretro-info"
+		games-emulation/libretro-info
+		!!games-emulation/stella-libretro
+"
