@@ -19,9 +19,3 @@ RDEPEND="${DEPEND}
 
 MY_S="${S}"
 S="${S}/libretro"
-
-src_install() {
-	insinto "${LIBRETRO_DATA_DIR}"/snes9x_libretro
-	doins "${MY_S}"/docs/snes9x-license.txt
-	libretro-core_src_install
-}
