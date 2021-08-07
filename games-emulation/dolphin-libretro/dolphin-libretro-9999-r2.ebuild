@@ -16,8 +16,8 @@ SLOT="0"
 IUSE="opengl vulkan"
 
 PATCHES=(
-	"${FILESDIR}"/constant-array-index.patch
 	"${FILESDIR}"/missing-include.patch
+	"${FILESDIR}"/constant-array-index.patch
 )
 
 DEPEND="opengl? ( virtual/opengl )
