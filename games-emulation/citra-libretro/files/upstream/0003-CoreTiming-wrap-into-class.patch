@@ -1,0 +1,80 @@
+From 9458e4d8ec168b1cc673de72c9d22fda27c25b04 Mon Sep 17 00:00:00 2001
+From: Weiyi Wang <wwylele@gmail.com>
+Date: Sat, 27 Oct 2018 15:53:20 -0400
+Subject: [PATCH 03/23] CoreTiming: wrap into class
+
+---
+ src/core/arm/dynarmic/arm_dynarmic.cpp | 12 +++++++-----
+ src/core/arm/dynarmic/arm_dynarmic.h   |  7 ++++++-
+ 2 files changed, 13 insertions(+), 6 deletions(-)
+
+diff --git a/src/core/arm/dynarmic/arm_dynarmic.cpp b/src/core/arm/dynarmic/arm_dynarmic.cpp
+index b079afa9a..e3965f2fe 100644
+--- a/src/core/arm/dynarmic/arm_dynarmic.cpp
++++ b/src/core/arm/dynarmic/arm_dynarmic.cpp
+@@ -71,7 +71,8 @@ private:
+ 
+ class DynarmicUserCallbacks final : public Dynarmic::A32::UserCallbacks {
+ public:
+-    explicit DynarmicUserCallbacks(ARM_Dynarmic& parent) : parent(parent) {}
++    explicit DynarmicUserCallbacks(ARM_Dynarmic& parent)
++        : parent(parent), timing(parent.system.CoreTiming()) {}
+     ~DynarmicUserCallbacks() = default;
+ 
+     std::uint8_t MemoryRead8(VAddr vaddr) override {
+@@ -148,18 +149,19 @@ public:
+     }
+ 
+     void AddTicks(std::uint64_t ticks) override {
+-        CoreTiming::AddTicks(ticks);
++        timing.AddTicks(ticks);
+     }
+     std::uint64_t GetTicksRemaining() override {
+-        s64 ticks = CoreTiming::GetDowncount();
++        s64 ticks = timing.GetDowncount();
+         return static_cast<u64>(ticks <= 0 ? 0 : ticks);
+     }
+ 
+     ARM_Dynarmic& parent;
++    Core::Timing& timing;
+ };
+ 
+-ARM_Dynarmic::ARM_Dynarmic(PrivilegeMode initial_mode)
+-    : cb(std::make_unique<DynarmicUserCallbacks>(*this)) {
++ARM_Dynarmic::ARM_Dynarmic(Core::System& system, PrivilegeMode initial_mode)
++    : system(system), cb(std::make_unique<DynarmicUserCallbacks>(*this)) {
+     interpreter_state = std::make_shared<ARMul_State>(initial_mode);
+     PageTableChanged();
+ }
+diff --git a/src/core/arm/dynarmic/arm_dynarmic.h b/src/core/arm/dynarmic/arm_dynarmic.h
+index 5a1f85e22..0a73c05ac 100644
+--- a/src/core/arm/dynarmic/arm_dynarmic.h
++++ b/src/core/arm/dynarmic/arm_dynarmic.h
+@@ -15,11 +15,15 @@ namespace Memory {
+ struct PageTable;
+ } // namespace Memory
+ 
++namespace Core {
++struct System;
++}
++
+ class DynarmicUserCallbacks;
+ 
+ class ARM_Dynarmic final : public ARM_Interface {
+ public:
+-    explicit ARM_Dynarmic(PrivilegeMode initial_mode);
++    ARM_Dynarmic(Core::System& system, PrivilegeMode initial_mode);
+     ~ARM_Dynarmic();
+ 
+     void Run() override;
+@@ -50,6 +54,7 @@ public:
+ 
+ private:
+     friend class DynarmicUserCallbacks;
++    Core::System& system;
+     std::unique_ptr<DynarmicUserCallbacks> cb;
+     std::unique_ptr<Dynarmic::A32::Jit> MakeJit();
+ 
+-- 
+2.33.0
+

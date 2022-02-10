@@ -1,0 +1,141 @@
+From e04590a06d0c6081f88b40477782b50187a39b87 Mon Sep 17 00:00:00 2001
+From: MerryMage <MerryMage@users.noreply.github.com>
+Date: Mon, 6 Apr 2020 16:44:59 +0100
+Subject: [PATCH 19/23] externals: Update dynarmic to b58048a
+
+---
+ src/core/arm/dynarmic/arm_dynarmic.cpp      |  8 +++++
+ src/core/arm/dynarmic/arm_dynarmic_cp15.cpp | 34 ++++++++++-----------
+ src/core/arm/dynarmic/arm_dynarmic_cp15.h   | 14 ++++-----
+ 3 files changed, 31 insertions(+), 25 deletions(-)
+
+diff --git a/src/core/arm/dynarmic/arm_dynarmic.cpp b/src/core/arm/dynarmic/arm_dynarmic.cpp
+index b39a4a24e..bb32f470c 100644
+--- a/src/core/arm/dynarmic/arm_dynarmic.cpp
++++ b/src/core/arm/dynarmic/arm_dynarmic.cpp
+@@ -143,6 +143,14 @@ public:
+                 return;
+             }
+             break;
++        case Dynarmic::A32::Exception::SendEvent:
++        case Dynarmic::A32::Exception::SendEventLocal:
++        case Dynarmic::A32::Exception::WaitForInterrupt:
++        case Dynarmic::A32::Exception::WaitForEvent:
++        case Dynarmic::A32::Exception::Yield:
++        case Dynarmic::A32::Exception::PreloadData:
++        case Dynarmic::A32::Exception::PreloadDataWithIntentToWrite:
++            return;
+         }
+         ASSERT_MSG(false, "ExceptionRaised(exception = {}, pc = {:08X}, code = {:08X})",
+                    static_cast<std::size_t>(exception), pc, MemoryReadCode(pc));
+diff --git a/src/core/arm/dynarmic/arm_dynarmic_cp15.cpp b/src/core/arm/dynarmic/arm_dynarmic_cp15.cpp
+index 119aefac7..167f58e47 100644
+--- a/src/core/arm/dynarmic/arm_dynarmic_cp15.cpp
++++ b/src/core/arm/dynarmic/arm_dynarmic_cp15.cpp
+@@ -14,10 +14,10 @@ DynarmicCP15::DynarmicCP15(const std::shared_ptr<ARMul_State>& state) : interpre
+ 
+ DynarmicCP15::~DynarmicCP15() = default;
+ 
+-boost::optional<Callback> DynarmicCP15::CompileInternalOperation(bool two, unsigned opc1,
+-                                                                 CoprocReg CRd, CoprocReg CRn,
+-                                                                 CoprocReg CRm, unsigned opc2) {
+-    return boost::none;
++std::optional<Callback> DynarmicCP15::CompileInternalOperation(bool two, unsigned opc1,
++                                                               CoprocReg CRd, CoprocReg CRn,
++                                                               CoprocReg CRm, unsigned opc2) {
++    return std::nullopt;
+ }
+ 
+ CallbackOrAccessOneWord DynarmicCP15::CompileSendOneWord(bool two, unsigned opc1, CoprocReg CRn,
+@@ -38,7 +38,7 @@ CallbackOrAccessOneWord DynarmicCP15::CompileSendOneWord(bool two, unsigned opc1
+             // This is a dummy write, we ignore the value written here.
+             return &interpreter_state->CP15[CP15_DATA_MEMORY_BARRIER];
+         default:
+-            return boost::blank{};
++            return std::monostate{};
+         }
+     }
+ 
+@@ -46,11 +46,11 @@ CallbackOrAccessOneWord DynarmicCP15::CompileSendOneWord(bool two, unsigned opc1
+         return &interpreter_state->CP15[CP15_THREAD_UPRW];
+     }
+ 
+-    return boost::blank{};
++    return std::monostate{};
+ }
+ 
+ CallbackOrAccessTwoWords DynarmicCP15::CompileSendTwoWords(bool two, unsigned opc, CoprocReg CRm) {
+-    return boost::blank{};
++    return std::monostate{};
+ }
+ 
+ CallbackOrAccessOneWord DynarmicCP15::CompileGetOneWord(bool two, unsigned opc1, CoprocReg CRn,
+@@ -64,25 +64,23 @@ CallbackOrAccessOneWord DynarmicCP15::CompileGetOneWord(bool two, unsigned opc1,
+         case 3:
+             return &interpreter_state->CP15[CP15_THREAD_URO];
+         default:
+-            return boost::blank{};
++            return std::monostate{};
+         }
+     }
+ 
+-    return boost::blank{};
++    return std::monostate{};
+ }
+ 
+ CallbackOrAccessTwoWords DynarmicCP15::CompileGetTwoWords(bool two, unsigned opc, CoprocReg CRm) {
+-    return boost::blank{};
++    return std::monostate{};
+ }
+ 
+-boost::optional<Callback> DynarmicCP15::CompileLoadWords(bool two, bool long_transfer,
+-                                                         CoprocReg CRd,
+-                                                         boost::optional<u8> option) {
+-    return boost::none;
++std::optional<Callback> DynarmicCP15::CompileLoadWords(bool two, bool long_transfer, CoprocReg CRd,
++                                                       std::optional<u8> option) {
++    return std::nullopt;
+ }
+ 
+-boost::optional<Callback> DynarmicCP15::CompileStoreWords(bool two, bool long_transfer,
+-                                                          CoprocReg CRd,
+-                                                          boost::optional<u8> option) {
+-    return boost::none;
++std::optional<Callback> DynarmicCP15::CompileStoreWords(bool two, bool long_transfer, CoprocReg CRd,
++                                                        std::optional<u8> option) {
++    return std::nullopt;
+ }
+diff --git a/src/core/arm/dynarmic/arm_dynarmic_cp15.h b/src/core/arm/dynarmic/arm_dynarmic_cp15.h
+index 66740ea71..923343864 100644
+--- a/src/core/arm/dynarmic/arm_dynarmic_cp15.h
++++ b/src/core/arm/dynarmic/arm_dynarmic_cp15.h
+@@ -17,19 +17,19 @@ public:
+     explicit DynarmicCP15(const std::shared_ptr<ARMul_State>&);
+     ~DynarmicCP15() override;
+ 
+-    boost::optional<Callback> CompileInternalOperation(bool two, unsigned opc1, CoprocReg CRd,
+-                                                       CoprocReg CRn, CoprocReg CRm,
+-                                                       unsigned opc2) override;
++    std::optional<Callback> CompileInternalOperation(bool two, unsigned opc1, CoprocReg CRd,
++                                                     CoprocReg CRn, CoprocReg CRm,
++                                                     unsigned opc2) override;
+     CallbackOrAccessOneWord CompileSendOneWord(bool two, unsigned opc1, CoprocReg CRn,
+                                                CoprocReg CRm, unsigned opc2) override;
+     CallbackOrAccessTwoWords CompileSendTwoWords(bool two, unsigned opc, CoprocReg CRm) override;
+     CallbackOrAccessOneWord CompileGetOneWord(bool two, unsigned opc1, CoprocReg CRn, CoprocReg CRm,
+                                               unsigned opc2) override;
+     CallbackOrAccessTwoWords CompileGetTwoWords(bool two, unsigned opc, CoprocReg CRm) override;
+-    boost::optional<Callback> CompileLoadWords(bool two, bool long_transfer, CoprocReg CRd,
+-                                               boost::optional<u8> option) override;
+-    boost::optional<Callback> CompileStoreWords(bool two, bool long_transfer, CoprocReg CRd,
+-                                                boost::optional<u8> option) override;
++    std::optional<Callback> CompileLoadWords(bool two, bool long_transfer, CoprocReg CRd,
++                                             std::optional<u8> option) override;
++    std::optional<Callback> CompileStoreWords(bool two, bool long_transfer, CoprocReg CRd,
++                                              std::optional<u8> option) override;
+ 
+ private:
+     std::shared_ptr<ARMul_State> interpreter_state;
+-- 
+2.33.0
+

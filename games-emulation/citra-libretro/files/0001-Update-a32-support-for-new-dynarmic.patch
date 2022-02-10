@@ -1,0 +1,53 @@
+From c8b5e2abda750abcf1cdb401357d9f29fdd2d942 Mon Sep 17 00:00:00 2001
+From: Steven Newbury <steve@snewbury.org.uk>
+Date: Mon, 13 Sep 2021 15:38:35 +0100
+Subject: [PATCH] Update a32 support for new dynarmic
+
+---
+ src/core/arm/dynarmic/arm_dynarmic.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/core/arm/dynarmic/arm_dynarmic.h b/src/core/arm/dynarmic/arm_dynarmic.h
+index 5a1f85e2..99fa2da9 100644
+--- a/src/core/arm/dynarmic/arm_dynarmic.h
++++ b/src/core/arm/dynarmic/arm_dynarmic.h
+@@ -6,7 +6,7 @@
+ 
+ #include <map>
+ #include <memory>
+-#include <dynarmic/A32/a32.h>
++#include <dynarmic/interface/A32/a32.h>
+ #include "common/common_types.h"
+ #include "core/arm/arm_interface.h"
+ #include "core/arm/skyeye_common/armstate.h"
+diff --git a/src/core/arm/dynarmic/arm_dynarmic_cp15.h b/src/core/arm/dynarmic/arm_dynarmic_cp15.h
+index 66740ea7..58906555 100644
+--- a/src/core/arm/dynarmic/arm_dynarmic_cp15.h
++++ b/src/core/arm/dynarmic/arm_dynarmic_cp15.h
+@@ -5,7 +5,7 @@
+ #pragma once
+ 
+ #include <memory>
+-#include <dynarmic/A32/coprocessor.h>
++#include <dynarmic/interface/A32/coprocessor.h>
+ #include "common/common_types.h"
+ 
+ struct ARMul_State;
+diff --git a/src/core/arm/dynarmic/arm_dynarmic.cpp b/src/core/arm/dynarmic/arm_dynarmic.cpp
+index 4220ebd3..16bdda25 100644
+--- a/src/core/arm/dynarmic/arm_dynarmic.cpp
++++ b/src/core/arm/dynarmic/arm_dynarmic.cpp
+@@ -3,8 +3,8 @@
+ // Refer to the license.txt file included.
+ 
+ #include <cstring>
+-#include <dynarmic/A32/a32.h>
+-#include <dynarmic/A32/context.h>
++#include <dynarmic/interface/A32/a32.h>
++#include <dynarmic/interface/A32/context.h>
+ #include "common/assert.h"
+ #include "common/microprofile.h"
+ #include "core/arm/dynarmic/arm_dynarmic.h"
+-- 
+2.33.0
+

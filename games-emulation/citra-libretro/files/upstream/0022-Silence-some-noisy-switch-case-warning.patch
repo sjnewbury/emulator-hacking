@@ -1,0 +1,60 @@
+From 1128f5f8eea6931a5fe142b47e185ea88e05e0f1 Mon Sep 17 00:00:00 2001
+From: xperia64 <xperiancedapps@gmail.com>
+Date: Sun, 6 Sep 2020 16:22:48 -0400
+Subject: [PATCH 22/23] Silence some noisy switch case warning
+
+---
+ src/core/arm/dynarmic/arm_dynarmic.cpp | 12 ++++++++----
+ 1 file changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/src/core/arm/dynarmic/arm_dynarmic.cpp b/src/core/arm/dynarmic/arm_dynarmic.cpp
+index 64cb0524e..672e4f31a 100644
+--- a/src/core/arm/dynarmic/arm_dynarmic.cpp
++++ b/src/core/arm/dynarmic/arm_dynarmic.cpp
+@@ -205,8 +205,9 @@ u32 ARM_Dynarmic::GetVFPSystemReg(VFPSystemRegister reg) const {
+         return jit->Fpscr();
+     case VFP_FPEXC:
+         return fpexc;
++    default:
++        UNREACHABLE_MSG("Unknown VFP system register: {}", static_cast<size_t>(reg));
+     }
+-    UNREACHABLE_MSG("Unknown VFP system register: {}", static_cast<size_t>(reg));
+ }
+ 
+ void ARM_Dynarmic::SetVFPSystemReg(VFPSystemRegister reg, u32 value) {
+@@ -217,8 +218,9 @@ void ARM_Dynarmic::SetVFPSystemReg(VFPSystemRegister reg, u32 value) {
+     case VFP_FPEXC:
+         fpexc = value;
+         return;
++    default:
++        UNREACHABLE_MSG("Unknown VFP system register: {}", static_cast<size_t>(reg));
+     }
+-    UNREACHABLE_MSG("Unknown VFP system register: {}", static_cast<size_t>(reg));
+ }
+ 
+ u32 ARM_Dynarmic::GetCPSR() const {
+@@ -235,8 +237,9 @@ u32 ARM_Dynarmic::GetCP15Register(CP15Register reg) const {
+         return cp15_state.cp15_thread_uprw;
+     case CP15_THREAD_URO:
+         return cp15_state.cp15_thread_uro;
++    default:
++        UNREACHABLE_MSG("Unknown CP15 register: {}", static_cast<size_t>(reg));
+     }
+-    UNREACHABLE_MSG("Unknown CP15 register: {}", static_cast<size_t>(reg));
+ }
+ 
+ void ARM_Dynarmic::SetCP15Register(CP15Register reg, u32 value) {
+@@ -247,8 +250,9 @@ void ARM_Dynarmic::SetCP15Register(CP15Register reg, u32 value) {
+     case CP15_THREAD_URO:
+         cp15_state.cp15_thread_uro = value;
+         return;
++    default:
++        UNREACHABLE_MSG("Unknown CP15 register: {}", static_cast<size_t>(reg));
+     }
+-    UNREACHABLE_MSG("Unknown CP15 register: {}", static_cast<size_t>(reg));
+ }
+ 
+ std::unique_ptr<ARM_Interface::ThreadContext> ARM_Dynarmic::NewContext() const {
+-- 
+2.33.0
+

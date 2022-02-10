@@ -1,0 +1,1989 @@
+From 9458e4d8ec168b1cc673de72c9d22fda27c25b04 Mon Sep 17 00:00:00 2001
+From: Weiyi Wang <wwylele@gmail.com>
+Date: Sat, 27 Oct 2018 15:53:20 -0400
+Subject: [PATCH] CoreTiming: wrap into class
+
+---
+ src/audio_core/hle/hle.cpp                    |  14 +-
+ src/core/arm/dynarmic/arm_dynarmic.cpp        |  12 +-
+ src/core/arm/dynarmic/arm_dynarmic.h          |   7 +-
+ src/core/arm/dyncom/arm_dyncom.cpp            |   4 +-
+ .../arm/dyncom/arm_dyncom_interpreter.cpp     |   3 +-
+ src/core/core.cpp                             |  22 +-
+ src/core/core.h                               |   9 +
+ src/core/core_timing.cpp                      | 131 +++--------
+ src/core/core_timing.h                        | 176 ++++++++------
+ src/core/hle/applets/applet.cpp               |  16 +-
+ src/core/hle/kernel/shared_page.cpp           |  14 +-
+ src/core/hle/kernel/shared_page.h             |   6 +-
+ src/core/hle/kernel/svc.cpp                   |   5 +-
+ src/core/hle/kernel/thread.cpp                |  22 +-
+ src/core/hle/kernel/thread.h                  |   2 +-
+ src/core/hle/kernel/timer.cpp                 |  20 +-
+ src/core/hle/kernel/timer.h                   |   2 +-
+ src/core/hle/service/cam/cam.cpp              |   8 +-
+ src/core/hle/service/cam/cam.h                |   7 +-
+ src/core/hle/service/hid/hid.cpp              |  38 +--
+ src/core/hle/service/hid/hid.h                |  10 +-
+ src/core/hle/service/ir/extra_hid.cpp         |  16 +-
+ src/core/hle/service/ir/extra_hid.h           |   8 +-
+ src/core/hle/service/ir/ir_rst.cpp            |  17 +-
+ src/core/hle/service/ir/ir_rst.h              |   7 +-
+ src/core/hle/service/ir/ir_user.h             |   4 -
+ src/core/hle/service/nwm/nwm_uds.cpp          |  22 +-
+ src/core/hle/service/nwm/nwm_uds.h            |   2 +
+ src/core/hw/gpu.cpp                           |   9 +-
+ src/tests/core/arm/arm_test_common.cpp        |   4 +-
+ src/tests/core/core_timing.cpp                | 219 +++++++++---------
+ src/tests/core/hle/kernel/hle_ipc.cpp         |  11 +-
+ src/tests/core/memory/memory.cpp              |   6 +-
+ .../renderer_opengl/renderer_opengl.cpp       |   3 +-
+ 34 files changed, 428 insertions(+), 428 deletions(-)
+
+diff --git a/src/audio_core/hle/hle.cpp b/src/audio_core/hle/hle.cpp
+index 58604d861eb..db50c0bff6e 100644
+--- a/src/audio_core/hle/hle.cpp
++++ b/src/audio_core/hle/hle.cpp
+@@ -12,6 +12,7 @@
+ #include "common/assert.h"
+ #include "common/common_types.h"
+ #include "common/logging/log.h"
++#include "core/core.h"
+ #include "core/core_timing.h"
+ 
+ using InterruptType = Service::DSP::DSP_DSP::InterruptType;
+@@ -63,7 +64,7 @@ struct DspHle::Impl final {
+     HLE::Mixers mixers;
+ 
+     DspHle& parent;
+-    CoreTiming::EventType* tick_event;
++    Core::TimingEventType* tick_event;
+ 
+     std::weak_ptr<DSP_DSP> dsp_dsp;
+ };
+@@ -71,15 +72,17 @@ struct DspHle::Impl final {
+ DspHle::Impl::Impl(DspHle& parent_) : parent(parent_) {
+     dsp_memory.raw_memory.fill(0);
+ 
++    Core::Timing& timing = Core::System::GetInstance().CoreTiming();
+     tick_event =
+-        CoreTiming::RegisterEvent("AudioCore::DspHle::tick_event", [this](u64, s64 cycles_late) {
++        timing.RegisterEvent("AudioCore::DspHle::tick_event", [this](u64, s64 cycles_late) {
+             this->AudioTickCallback(cycles_late);
+         });
+-    CoreTiming::ScheduleEvent(audio_frame_ticks, tick_event);
++    timing.ScheduleEvent(audio_frame_ticks, tick_event);
+ }
+ 
+ DspHle::Impl::~Impl() {
+-    CoreTiming::UnscheduleEvent(tick_event, 0);
++    Core::Timing& timing = Core::System::GetInstance().CoreTiming();
++    timing.UnscheduleEvent(tick_event, 0);
+ }
+ 
+ DspState DspHle::Impl::GetDspState() const {
+@@ -328,7 +331,8 @@ void DspHle::Impl::AudioTickCallback(s64 cycles_late) {
+     }
+ 
+     // Reschedule recurrent event
+-    CoreTiming::ScheduleEvent(audio_frame_ticks - cycles_late, tick_event);
++    Core::Timing& timing = Core::System::GetInstance().CoreTiming();
++    timing.ScheduleEvent(audio_frame_ticks - cycles_late, tick_event);
+ }
+ 
+ DspHle::DspHle() : impl(std::make_unique<Impl>(*this)) {}
+diff --git a/src/core/arm/dynarmic/arm_dynarmic.cpp b/src/core/arm/dynarmic/arm_dynarmic.cpp
+index b079afa9a9e..e3965f2fec6 100644
+--- a/src/core/arm/dynarmic/arm_dynarmic.cpp
++++ b/src/core/arm/dynarmic/arm_dynarmic.cpp
+@@ -71,7 +71,8 @@ class DynarmicThreadContext final : public ARM_Interface::ThreadContext {
+ 
+ class DynarmicUserCallbacks final : public Dynarmic::A32::UserCallbacks {
+ public:
+-    explicit DynarmicUserCallbacks(ARM_Dynarmic& parent) : parent(parent) {}
++    explicit DynarmicUserCallbacks(ARM_Dynarmic& parent)
++        : parent(parent), timing(parent.system.CoreTiming()) {}
+     ~DynarmicUserCallbacks() = default;
+ 
+     std::uint8_t MemoryRead8(VAddr vaddr) override {
+@@ -148,18 +149,19 @@ class DynarmicUserCallbacks final : public Dynarmic::A32::UserCallbacks {
+     }
+ 
+     void AddTicks(std::uint64_t ticks) override {
+-        CoreTiming::AddTicks(ticks);
++        timing.AddTicks(ticks);
+     }
+     std::uint64_t GetTicksRemaining() override {
+-        s64 ticks = CoreTiming::GetDowncount();
++        s64 ticks = timing.GetDowncount();
+         return static_cast<u64>(ticks <= 0 ? 0 : ticks);
+     }
+ 
+     ARM_Dynarmic& parent;
++    Core::Timing& timing;
+ };
+ 
+-ARM_Dynarmic::ARM_Dynarmic(PrivilegeMode initial_mode)
+-    : cb(std::make_unique<DynarmicUserCallbacks>(*this)) {
++ARM_Dynarmic::ARM_Dynarmic(Core::System& system, PrivilegeMode initial_mode)
++    : system(system), cb(std::make_unique<DynarmicUserCallbacks>(*this)) {
+     interpreter_state = std::make_shared<ARMul_State>(initial_mode);
+     PageTableChanged();
+ }
+diff --git a/src/core/arm/dynarmic/arm_dynarmic.h b/src/core/arm/dynarmic/arm_dynarmic.h
+index 5a1f85e2247..0a73c05acea 100644
+--- a/src/core/arm/dynarmic/arm_dynarmic.h
++++ b/src/core/arm/dynarmic/arm_dynarmic.h
+@@ -15,11 +15,15 @@ namespace Memory {
+ struct PageTable;
+ } // namespace Memory
+ 
++namespace Core {
++struct System;
++}
++
+ class DynarmicUserCallbacks;
+ 
+ class ARM_Dynarmic final : public ARM_Interface {
+ public:
+-    explicit ARM_Dynarmic(PrivilegeMode initial_mode);
++    ARM_Dynarmic(Core::System& system, PrivilegeMode initial_mode);
+     ~ARM_Dynarmic();
+ 
+     void Run() override;
+@@ -50,6 +54,7 @@ class ARM_Dynarmic final : public ARM_Interface {
+ 
+ private:
+     friend class DynarmicUserCallbacks;
++    Core::System& system;
+     std::unique_ptr<DynarmicUserCallbacks> cb;
+     std::unique_ptr<Dynarmic::A32::Jit> MakeJit();
+ 
+diff --git a/src/core/arm/dyncom/arm_dyncom.cpp b/src/core/arm/dyncom/arm_dyncom.cpp
+index 3dc1aa2f04f..d3113632c62 100644
+--- a/src/core/arm/dyncom/arm_dyncom.cpp
++++ b/src/core/arm/dyncom/arm_dyncom.cpp
+@@ -75,7 +75,7 @@ ARM_DynCom::ARM_DynCom(PrivilegeMode initial_mode) {
+ ARM_DynCom::~ARM_DynCom() {}
+ 
+ void ARM_DynCom::Run() {
+-    ExecuteInstructions(std::max<s64>(CoreTiming::GetDowncount(), 0));
++    ExecuteInstructions(std::max<s64>(Core::System::GetInstance().CoreTiming().GetDowncount(), 0));
+ }
+ 
+ void ARM_DynCom::Step() {
+@@ -146,7 +146,7 @@ void ARM_DynCom::SetCP15Register(CP15Register reg, u32 value) {
+ void ARM_DynCom::ExecuteInstructions(u64 num_instructions) {
+     state->NumInstrsToExecute = num_instructions;
+     unsigned ticks_executed = InterpreterMainLoop(state.get());
+-    CoreTiming::AddTicks(ticks_executed);
++    Core::System::GetInstance().CoreTiming().AddTicks(ticks_executed);
+     state->ServeBreak();
+ }
+ 
+diff --git a/src/core/arm/dyncom/arm_dyncom_interpreter.cpp b/src/core/arm/dyncom/arm_dyncom_interpreter.cpp
+index cd70b8da3c3..c6be38873a8 100644
+--- a/src/core/arm/dyncom/arm_dyncom_interpreter.cpp
++++ b/src/core/arm/dyncom/arm_dyncom_interpreter.cpp
+@@ -18,6 +18,7 @@
+ #include "core/arm/skyeye_common/armstate.h"
+ #include "core/arm/skyeye_common/armsupp.h"
+ #include "core/arm/skyeye_common/vfp/vfp.h"
++#include "core/core.h"
+ #include "core/core_timing.h"
+ #include "core/gdbstub/gdbstub.h"
+ #include "core/hle/kernel/svc.h"
+@@ -3859,7 +3860,7 @@ SUB_INST : {
+ SWI_INST : {
+     if (inst_base->cond == ConditionCode::AL || CondPassed(cpu, inst_base->cond)) {
+         swi_inst* const inst_cream = (swi_inst*)inst_base->component;
+-        CoreTiming::AddTicks(num_instrs);
++        Core::System::GetInstance().CoreTiming().AddTicks(num_instrs);
+         cpu->NumInstrsToExecute =
+             num_instrs >= cpu->NumInstrsToExecute ? 0 : cpu->NumInstrsToExecute - num_instrs;
+         num_instrs = 0;
+diff --git a/src/core/core.cpp b/src/core/core.cpp
+index 78585380c78..52b27a6cae4 100644
+--- a/src/core/core.cpp
++++ b/src/core/core.cpp
+@@ -61,11 +61,11 @@ System::ResultStatus System::RunLoop(bool tight_loop) {
+     // instead advance to the next event and try to yield to the next thread
+     if (kernel->GetThreadManager().GetCurrentThread() == nullptr) {
+         LOG_TRACE(Core_ARM11, "Idling");
+-        CoreTiming::Idle();
+-        CoreTiming::Advance();
++        timing->Idle();
++        timing->Advance();
+         PrepareReschedule();
+     } else {
+-        CoreTiming::Advance();
++        timing->Advance();
+         if (tight_loop) {
+             cpu_core->Run();
+         } else {
+@@ -155,7 +155,7 @@ void System::PrepareReschedule() {
+ }
+ 
+ PerfStats::Results System::GetAndResetPerfStats() {
+-    return perf_stats.GetAndResetStats(CoreTiming::GetGlobalTimeUs());
++    return perf_stats.GetAndResetStats(timing->GetGlobalTimeUs());
+ }
+ 
+ void System::Reschedule() {
+@@ -170,11 +170,11 @@ void System::Reschedule() {
+ System::ResultStatus System::Init(EmuWindow& emu_window, u32 system_mode) {
+     LOG_DEBUG(HW_Memory, "initialized OK");
+ 
+-    CoreTiming::Init();
++    timing = std::make_unique<Timing>();
+ 
+     if (Settings::values.use_cpu_jit) {
+ #ifdef ARCHITECTURE_x86_64
+-        cpu_core = std::make_unique<ARM_Dynarmic>(USER32MODE);
++        cpu_core = std::make_unique<ARM_Dynarmic>(*this, USER32MODE);
+ #else
+         cpu_core = std::make_unique<ARM_DynCom>(USER32MODE);
+         LOG_WARNING(Core, "CPU JIT requested, but Dynarmic not available");
+@@ -239,6 +239,14 @@ const Kernel::KernelSystem& System::Kernel() const {
+     return *kernel;
+ }
+ 
++Timing& System::CoreTiming() {
++    return *timing;
++}
++
++const Timing& System::CoreTiming() const {
++    return *timing;
++}
++
+ void System::RegisterSoftwareKeyboard(std::shared_ptr<Frontend::SoftwareKeyboard> swkbd) {
+     registered_swkbd = std::move(swkbd);
+ }
+@@ -265,7 +273,7 @@ void System::Shutdown() {
+     service_manager.reset();
+     dsp_core.reset();
+     cpu_core.reset();
+-    CoreTiming::Shutdown();
++    timing.reset();
+     app_loader.reset();
+ 
+     if (auto room_member = Network::GetRoomMember().lock()) {
+diff --git a/src/core/core.h b/src/core/core.h
+index 0cb53475fba..af1291856d5 100644
+--- a/src/core/core.h
++++ b/src/core/core.h
+@@ -41,6 +41,8 @@ class KernelSystem;
+ 
+ namespace Core {
+ 
++class Timing;
++
+ class System {
+ public:
+     /**
+@@ -176,6 +178,12 @@ class System {
+     /// Gets a const reference to the kernel
+     const Kernel::KernelSystem& Kernel() const;
+ 
++    /// Gets a reference to the timing system
++    Timing& CoreTiming();
++
++    /// Gets a const reference to the timing system
++    const Timing& CoreTiming() const;
++
+     PerfStats perf_stats;
+     FrameLimiter frame_limiter;
+ 
+@@ -246,6 +254,7 @@ class System {
+ public: // HACK: this is temporary exposed for tests,
+         // due to WIP kernel refactor causing desync state in memory
+     std::unique_ptr<Kernel::KernelSystem> kernel;
++    std::unique_ptr<Timing> timing;
+ 
+ private:
+     static System s_instance;
+diff --git a/src/core/core_timing.cpp b/src/core/core_timing.cpp
+index ccee3824352..df355ab2733 100644
+--- a/src/core/core_timing.cpp
++++ b/src/core/core_timing.cpp
+@@ -2,75 +2,25 @@
+ // Licensed under GPLv2+
+ // Refer to the license.txt file included.
+ 
+-#include "core/core_timing.h"
+-
+ #include <algorithm>
+ #include <cinttypes>
+-#include <mutex>
+-#include <string>
+ #include <tuple>
+-#include <unordered_map>
+-#include <vector>
+ #include "common/assert.h"
+ #include "common/logging/log.h"
+-#include "common/thread.h"
+-#include "common/threadsafe_queue.h"
+-
+-namespace CoreTiming {
+-
+-static s64 global_timer;
+-static s64 slice_length;
+-static s64 downcount;
+-
+-struct EventType {
+-    TimedCallback callback;
+-    const std::string* name;
+-};
++#include "core/core_timing.h"
+ 
+-struct Event {
+-    s64 time;
+-    u64 fifo_order;
+-    u64 userdata;
+-    const EventType* type;
+-};
++namespace Core {
+ 
+ // Sort by time, unless the times are the same, in which case sort by the order added to the queue
+-static bool operator>(const Event& left, const Event& right) {
+-    return std::tie(left.time, left.fifo_order) > std::tie(right.time, right.fifo_order);
++bool Timing::Event::operator>(const Event& right) const {
++    return std::tie(time, fifo_order) > std::tie(right.time, right.fifo_order);
+ }
+ 
+-static bool operator<(const Event& left, const Event& right) {
+-    return std::tie(left.time, left.fifo_order) < std::tie(right.time, right.fifo_order);
++bool Timing::Event::operator<(const Event& right) const {
++    return std::tie(time, fifo_order) < std::tie(right.time, right.fifo_order);
+ }
+ 
+-// unordered_map stores each element separately as a linked list node so pointers to elements
+-// remain stable regardless of rehashes/resizing.
+-static std::unordered_map<std::string, EventType> event_types;
+-
+-// The queue is a min-heap using std::make_heap/push_heap/pop_heap.
+-// We don't use std::priority_queue because we need to be able to serialize, unserialize and
+-// erase arbitrary events (RemoveEvent()) regardless of the queue order. These aren't accomodated
+-// by the standard adaptor class.
+-static std::vector<Event> event_queue;
+-static u64 event_fifo_id;
+-// the queue for storing the events from other threads threadsafe until they will be added
+-// to the event_queue by the emu thread
+-static Common::MPSCQueue<Event, false> ts_queue;
+-
+-static constexpr int MAX_SLICE_LENGTH = 20000;
+-
+-static s64 idled_cycles;
+-
+-// Are we in a function that has been called from Advance()
+-// If events are sheduled from a function that gets called from Advance(),
+-// don't change slice_length and downcount.
+-static bool is_global_timer_sane;
+-
+-static EventType* ev_lost = nullptr;
+-
+-static void EmptyTimedCallback(u64 userdata, s64 cyclesLate) {}
+-
+-EventType* RegisterEvent(const std::string& name, TimedCallback callback) {
++TimingEventType* Timing::RegisterEvent(const std::string& name, TimedCallback callback) {
+     // check for existing type with same name.
+     // we want event type names to remain unique so that we can use them for serialization.
+     ASSERT_MSG(event_types.find(name) == event_types.end(),
+@@ -78,42 +28,17 @@ EventType* RegisterEvent(const std::string& name, TimedCallback callback) {
+                "during Init to avoid breaking save states.",
+                name);
+ 
+-    auto info = event_types.emplace(name, EventType{callback, nullptr});
+-    EventType* event_type = &info.first->second;
++    auto info = event_types.emplace(name, TimingEventType{callback, nullptr});
++    TimingEventType* event_type = &info.first->second;
+     event_type->name = &info.first->first;
+     return event_type;
+ }
+ 
+-void UnregisterAllEvents() {
+-    ASSERT_MSG(event_queue.empty(), "Cannot unregister events with events pending");
+-    event_types.clear();
+-}
+-
+-void Init() {
+-    downcount = MAX_SLICE_LENGTH;
+-    slice_length = MAX_SLICE_LENGTH;
+-    global_timer = 0;
+-    idled_cycles = 0;
+-
+-    // The time between CoreTiming being intialized and the first call to Advance() is considered
+-    // the slice boundary between slice -1 and slice 0. Dispatcher loops must call Advance() before
+-    // executing the first cycle of each slice to prepare the slice length and downcount for
+-    // that slice.
+-    is_global_timer_sane = true;
+-
+-    event_fifo_id = 0;
+-    ev_lost = RegisterEvent("_lost_event", &EmptyTimedCallback);
+-}
+-
+-void Shutdown() {
++Timing::~Timing() {
+     MoveEvents();
+-    ClearPendingEvents();
+-    UnregisterAllEvents();
+ }
+ 
+-// This should only be called from the CPU thread. If you are calling
+-// it from any other thread, you are doing something evil
+-u64 GetTicks() {
++u64 Timing::GetTicks() const {
+     u64 ticks = static_cast<u64>(global_timer);
+     if (!is_global_timer_sane) {
+         ticks += slice_length - downcount;
+@@ -121,19 +46,16 @@ u64 GetTicks() {
+     return ticks;
+ }
+ 
+-void AddTicks(u64 ticks) {
++void Timing::AddTicks(u64 ticks) {
+     downcount -= ticks;
+ }
+ 
+-u64 GetIdleTicks() {
++u64 Timing::GetIdleTicks() const {
+     return static_cast<u64>(idled_cycles);
+ }
+ 
+-void ClearPendingEvents() {
+-    event_queue.clear();
+-}
+-
+-void ScheduleEvent(s64 cycles_into_future, const EventType* event_type, u64 userdata) {
++void Timing::ScheduleEvent(s64 cycles_into_future, const TimingEventType* event_type,
++                           u64 userdata) {
+     ASSERT(event_type != nullptr);
+     s64 timeout = GetTicks() + cycles_into_future;
+ 
+@@ -145,11 +67,12 @@ void ScheduleEvent(s64 cycles_into_future, const EventType* event_type, u64 user
+     std::push_heap(event_queue.begin(), event_queue.end(), std::greater<>());
+ }
+ 
+-void ScheduleEventThreadsafe(s64 cycles_into_future, const EventType* event_type, u64 userdata) {
++void Timing::ScheduleEventThreadsafe(s64 cycles_into_future, const TimingEventType* event_type,
++                                     u64 userdata) {
+     ts_queue.Push(Event{global_timer + cycles_into_future, 0, userdata, event_type});
+ }
+ 
+-void UnscheduleEvent(const EventType* event_type, u64 userdata) {
++void Timing::UnscheduleEvent(const TimingEventType* event_type, u64 userdata) {
+     auto itr = std::remove_if(event_queue.begin(), event_queue.end(), [&](const Event& e) {
+         return e.type == event_type && e.userdata == userdata;
+     });
+@@ -161,7 +84,7 @@ void UnscheduleEvent(const EventType* event_type, u64 userdata) {
+     }
+ }
+ 
+-void RemoveEvent(const EventType* event_type) {
++void Timing::RemoveEvent(const TimingEventType* event_type) {
+     auto itr = std::remove_if(event_queue.begin(), event_queue.end(),
+                               [&](const Event& e) { return e.type == event_type; });
+ 
+@@ -172,12 +95,12 @@ void RemoveEvent(const EventType* event_type) {
+     }
+ }
+ 
+-void RemoveNormalAndThreadsafeEvent(const EventType* event_type) {
++void Timing::RemoveNormalAndThreadsafeEvent(const TimingEventType* event_type) {
+     MoveEvents();
+     RemoveEvent(event_type);
+ }
+ 
+-void ForceExceptionCheck(s64 cycles) {
++void Timing::ForceExceptionCheck(s64 cycles) {
+     cycles = std::max<s64>(0, cycles);
+     if (downcount > cycles) {
+         slice_length -= downcount - cycles;
+@@ -185,7 +108,7 @@ void ForceExceptionCheck(s64 cycles) {
+     }
+ }
+ 
+-void MoveEvents() {
++void Timing::MoveEvents() {
+     for (Event ev; ts_queue.Pop(ev);) {
+         ev.fifo_order = event_fifo_id++;
+         event_queue.emplace_back(std::move(ev));
+@@ -193,7 +116,7 @@ void MoveEvents() {
+     }
+ }
+ 
+-void Advance() {
++void Timing::Advance() {
+     MoveEvents();
+ 
+     s64 cycles_executed = slice_length - downcount;
+@@ -220,17 +143,17 @@ void Advance() {
+     downcount = slice_length;
+ }
+ 
+-void Idle() {
++void Timing::Idle() {
+     idled_cycles += downcount;
+     downcount = 0;
+ }
+ 
+-std::chrono::microseconds GetGlobalTimeUs() {
++std::chrono::microseconds Timing::GetGlobalTimeUs() const {
+     return std::chrono::microseconds{GetTicks() * 1000000 / BASE_CLOCK_RATE_ARM11};
+ }
+ 
+-s64 GetDowncount() {
++s64 Timing::GetDowncount() const {
+     return downcount;
+ }
+ 
+-} // namespace CoreTiming
++} // namespace Core
+diff --git a/src/core/core_timing.h b/src/core/core_timing.h
+index bfafe4b6b84..617c7c6d6e2 100644
+--- a/src/core/core_timing.h
++++ b/src/core/core_timing.h
+@@ -21,8 +21,11 @@
+ #include <functional>
+ #include <limits>
+ #include <string>
++#include <unordered_map>
++#include <vector>
+ #include "common/common_types.h"
+ #include "common/logging/log.h"
++#include "common/threadsafe_queue.h"
+ 
+ // The timing we get from the assembly is 268,111,855.956 Hz
+ // It is possible that this number isn't just an integer because the compiler could have
+@@ -120,73 +123,112 @@ inline u64 cyclesToMs(s64 cycles) {
+     return cycles * 1000 / BASE_CLOCK_RATE_ARM11;
+ }
+ 
+-namespace CoreTiming {
+-
+-struct EventType;
++namespace Core {
+ 
+ using TimedCallback = std::function<void(u64 userdata, int cycles_late)>;
+ 
+-/**
+- * CoreTiming begins at the boundary of timing slice -1. An initial call to Advance() is
+- * required to end slice -1 and start slice 0 before the first cycle of code is executed.
+- */
+-void Init();
+-void Shutdown();
+-
+-/**
+- * This should only be called from the emu thread, if you are calling it any other thread, you are
+- * doing something evil
+- */
+-u64 GetTicks();
+-u64 GetIdleTicks();
+-void AddTicks(u64 ticks);
+-
+-/**
+- * Returns the event_type identifier. if name is not unique, it will assert.
+- */
+-EventType* RegisterEvent(const std::string& name, TimedCallback callback);
+-void UnregisterAllEvents();
+-
+-/**
+- * After the first Advance, the slice lengths and the downcount will be reduced whenever an event
+- * is scheduled earlier than the current values.
+- * Scheduling from a callback will not update the downcount until the Advance() completes.
+- */
+-void ScheduleEvent(s64 cycles_into_future, const EventType* event_type, u64 userdata = 0);
+-
+-/**
+- * This is to be called when outside of hle threads, such as the graphics thread, wants to
+- * schedule things to be executed on the main thread.
+- * Not that this doesn't change slice_length and thus events scheduled by this might be called
+- * with a delay of up to MAX_SLICE_LENGTH
+- */
+-void ScheduleEventThreadsafe(s64 cycles_into_future, const EventType* event_type, u64 userdata);
+-
+-void UnscheduleEvent(const EventType* event_type, u64 userdata);
+-
+-/// We only permit one event of each type in the queue at a time.
+-void RemoveEvent(const EventType* event_type);
+-void RemoveNormalAndThreadsafeEvent(const EventType* event_type);
+-
+-/** Advance must be called at the beginning of dispatcher loops, not the end. Advance() ends
+- * the previous timing slice and begins the next one, you must Advance from the previous
+- * slice to the current one before executing any cycles. CoreTiming starts in slice -1 so an
+- * Advance() is required to initialize the slice length before the first cycle of emulated
+- * instructions is executed.
+- */
+-void Advance();
+-void MoveEvents();
+-
+-/// Pretend that the main CPU has executed enough cycles to reach the next event.
+-void Idle();
+-
+-/// Clear all pending events. This should ONLY be done on exit.
+-void ClearPendingEvents();
+-
+-void ForceExceptionCheck(s64 cycles);
+-
+-std::chrono::microseconds GetGlobalTimeUs();
+-
+-s64 GetDowncount();
+-
+-} // namespace CoreTiming
++struct TimingEventType {
++    TimedCallback callback;
++    const std::string* name;
++};
++
++class Timing {
++public:
++    ~Timing();
++
++    /**
++     * This should only be called from the emu thread, if you are calling it any other thread, you
++     * are doing something evil
++     */
++    u64 GetTicks() const;
++    u64 GetIdleTicks() const;
++    void AddTicks(u64 ticks);
++
++    /**
++     * Returns the event_type identifier. if name is not unique, it will assert.
++     */
++    TimingEventType* RegisterEvent(const std::string& name, TimedCallback callback);
++
++    /**
++     * After the first Advance, the slice lengths and the downcount will be reduced whenever an
++     * event is scheduled earlier than the current values. Scheduling from a callback will not
++     * update the downcount until the Advance() completes.
++     */
++    void ScheduleEvent(s64 cycles_into_future, const TimingEventType* event_type, u64 userdata = 0);
++
++    /**
++     * This is to be called when outside of hle threads, such as the graphics thread, wants to
++     * schedule things to be executed on the main thread.
++     * Not that this doesn't change slice_length and thus events scheduled by this might be called
++     * with a delay of up to MAX_SLICE_LENGTH
++     */
++    void ScheduleEventThreadsafe(s64 cycles_into_future, const TimingEventType* event_type,
++                                 u64 userdata);
++
++    void UnscheduleEvent(const TimingEventType* event_type, u64 userdata);
++
++    /// We only permit one event of each type in the queue at a time.
++    void RemoveEvent(const TimingEventType* event_type);
++    void RemoveNormalAndThreadsafeEvent(const TimingEventType* event_type);
++
++    /** Advance must be called at the beginning of dispatcher loops, not the end. Advance() ends
++     * the previous timing slice and begins the next one, you must Advance from the previous
++     * slice to the current one before executing any cycles. CoreTiming starts in slice -1 so an
++     * Advance() is required to initialize the slice length before the first cycle of emulated
++     * instructions is executed.
++     */
++    void Advance();
++    void MoveEvents();
++
++    /// Pretend that the main CPU has executed enough cycles to reach the next event.
++    void Idle();
++
++    void ForceExceptionCheck(s64 cycles);
++
++    std::chrono::microseconds GetGlobalTimeUs() const;
++
++    s64 GetDowncount() const;
++
++private:
++    struct Event {
++        s64 time;
++        u64 fifo_order;
++        u64 userdata;
++        const TimingEventType* type;
++
++        bool operator>(const Event& right) const;
++        bool operator<(const Event& right) const;
++    };
++
++    static constexpr int MAX_SLICE_LENGTH = 20000;
++
++    s64 global_timer = 0;
++    s64 slice_length = MAX_SLICE_LENGTH;
++    s64 downcount = MAX_SLICE_LENGTH;
++
++    // unordered_map stores each element separately as a linked list node so pointers to
++    // elements remain stable regardless of rehashes/resizing.
++    std::unordered_map<std::string, TimingEventType> event_types;
++
++    // The queue is a min-heap using std::make_heap/push_heap/pop_heap.
++    // We don't use std::priority_queue because we need to be able to serialize, unserialize and
++    // erase arbitrary events (RemoveEvent()) regardless of the queue order. These aren't
++    // accomodated by the standard adaptor class.
++    std::vector<Event> event_queue;
++    u64 event_fifo_id = 0;
++    // the queue for storing the events from other threads threadsafe until they will be added
++    // to the event_queue by the emu thread
++    Common::MPSCQueue<Event, false> ts_queue;
++    s64 idled_cycles = 0;
++
++    // Are we in a function that has been called from Advance()
++    // If events are sheduled from a function that gets called from Advance(),
++    // don't change slice_length and downcount.
++    // The time between CoreTiming being intialized and the first call to Advance() is considered
++    // the slice boundary between slice -1 and slice 0. Dispatcher loops must call Advance() before
++    // executing the first cycle of each slice to prepare the slice length and downcount for
++    // that slice.
++    bool is_global_timer_sane = true;
++};
++
++} // namespace Core
+diff --git a/src/core/hle/applets/applet.cpp b/src/core/hle/applets/applet.cpp
+index 751b858155e..f41157d2f98 100644
+--- a/src/core/hle/applets/applet.cpp
++++ b/src/core/hle/applets/applet.cpp
+@@ -8,6 +8,7 @@
+ #include <unordered_map>
+ #include "common/assert.h"
+ #include "common/common_types.h"
++#include "core/core.h"
+ #include "core/core_timing.h"
+ #include "core/hle/applets/applet.h"
+ #include "core/hle/applets/erreula.h"
+@@ -38,7 +39,7 @@ namespace Applets {
+ 
+ static std::unordered_map<Service::APT::AppletId, std::shared_ptr<Applet>> applets;
+ /// The CoreTiming event identifier for the Applet update callback.
+-static CoreTiming::EventType* applet_update_event = nullptr;
++static Core::TimingEventType* applet_update_event = nullptr;
+ /// The interval at which the Applet update callback will be called, 16.6ms
+ static const u64 applet_update_interval_us = 16666;
+ 
+@@ -88,8 +89,8 @@ static void AppletUpdateEvent(u64 applet_id, s64 cycles_late) {
+ 
+     // If the applet is still running after the last update, reschedule the event
+     if (applet->IsRunning()) {
+-        CoreTiming::ScheduleEvent(usToCycles(applet_update_interval_us) - cycles_late,
+-                                  applet_update_event, applet_id);
++        Core::System::GetInstance().CoreTiming().ScheduleEvent(
++            usToCycles(applet_update_interval_us) - cycles_late, applet_update_event, applet_id);
+     } else {
+         // Otherwise the applet has terminated, in which case we should clean it up
+         applets[id] = nullptr;
+@@ -101,8 +102,8 @@ ResultCode Applet::Start(const Service::APT::AppletStartupParameter& parameter)
+     if (result.IsError())
+         return result;
+     // Schedule the update event
+-    CoreTiming::ScheduleEvent(usToCycles(applet_update_interval_us), applet_update_event,
+-                              static_cast<u64>(id));
++    Core::System::GetInstance().CoreTiming().ScheduleEvent(
++        usToCycles(applet_update_interval_us), applet_update_event, static_cast<u64>(id));
+     return result;
+ }
+ 
+@@ -128,11 +129,12 @@ bool IsLibraryAppletRunning() {
+ 
+ void Init() {
+     // Register the applet update callback
+-    applet_update_event = CoreTiming::RegisterEvent("HLE Applet Update Event", AppletUpdateEvent);
++    applet_update_event = Core::System::GetInstance().CoreTiming().RegisterEvent(
++        "HLE Applet Update Event", AppletUpdateEvent);
+ }
+ 
+ void Shutdown() {
+-    CoreTiming::RemoveEvent(applet_update_event);
++    Core::System::GetInstance().CoreTiming().RemoveEvent(applet_update_event);
+ }
+ } // namespace Applets
+ } // namespace HLE
+diff --git a/src/core/hle/kernel/shared_page.cpp b/src/core/hle/kernel/shared_page.cpp
+index 831782458ac..e2af01e0d38 100644
+--- a/src/core/hle/kernel/shared_page.cpp
++++ b/src/core/hle/kernel/shared_page.cpp
+@@ -4,6 +4,7 @@
+ 
+ #include <chrono>
+ #include <cstring>
++#include "core/core.h"
+ #include "core/core_timing.h"
+ #include "core/hle/kernel/shared_page.h"
+ #include "core/hle/service/ptm/ptm.h"
+@@ -53,9 +54,9 @@ Handler::Handler() {
+     init_time = GetInitTime();
+ 
+     using namespace std::placeholders;
+-    update_time_event = CoreTiming::RegisterEvent(
++    update_time_event = Core::System::GetInstance().CoreTiming().RegisterEvent(
+         "SharedPage::UpdateTimeCallback", std::bind(&Handler::UpdateTimeCallback, this, _1, _2));
+-    CoreTiming::ScheduleEvent(0, update_time_event);
++    Core::System::GetInstance().CoreTiming().ScheduleEvent(0, update_time_event);
+ 
+     float slidestate =
+         Settings::values.toggle_3d ? (float_le)Settings::values.factor_3d / 100 : 0.0f;
+@@ -65,8 +66,8 @@ Handler::Handler() {
+ /// Gets system time in 3DS format. The epoch is Jan 1900, and the unit is millisecond.
+ u64 Handler::GetSystemTime() const {
+     std::chrono::milliseconds now =
+-        init_time +
+-        std::chrono::duration_cast<std::chrono::milliseconds>(CoreTiming::GetGlobalTimeUs());
++        init_time + std::chrono::duration_cast<std::chrono::milliseconds>(
++                        Core::System::GetInstance().CoreTiming().GetGlobalTimeUs());
+ 
+     // 3DS system does't allow user to set a time before Jan 1 2000,
+     // so we use it as an auxiliary epoch to calculate the console time.
+@@ -97,14 +98,15 @@ void Handler::UpdateTimeCallback(u64 userdata, int cycles_late) {
+         shared_page.date_time_counter % 2 ? shared_page.date_time_0 : shared_page.date_time_1;
+ 
+     date_time.date_time = GetSystemTime();
+-    date_time.update_tick = CoreTiming::GetTicks();
++    date_time.update_tick = Core::System::GetInstance().CoreTiming().GetTicks();
+     date_time.tick_to_second_coefficient = BASE_CLOCK_RATE_ARM11;
+     date_time.tick_offset = 0;
+ 
+     ++shared_page.date_time_counter;
+ 
+     // system time is updated hourly
+-    CoreTiming::ScheduleEvent(msToCycles(60 * 60 * 1000) - cycles_late, update_time_event);
++    Core::System::GetInstance().CoreTiming().ScheduleEvent(msToCycles(60 * 60 * 1000) - cycles_late,
++                                                           update_time_event);
+ }
+ 
+ void Handler::SetMacAddress(const MacAddress& addr) {
+diff --git a/src/core/hle/kernel/shared_page.h b/src/core/hle/kernel/shared_page.h
+index 57f3bc3f2da..7b6dc2e0654 100644
+--- a/src/core/hle/kernel/shared_page.h
++++ b/src/core/hle/kernel/shared_page.h
+@@ -21,8 +21,8 @@
+ 
+ ////////////////////////////////////////////////////////////////////////////////////////////////////
+ 
+-namespace CoreTiming {
+-struct EventType;
++namespace Core {
++struct TimingEventType;
+ }
+ 
+ namespace SharedPage {
+@@ -96,7 +96,7 @@ class Handler {
+ private:
+     u64 GetSystemTime() const;
+     void UpdateTimeCallback(u64 userdata, int cycles_late);
+-    CoreTiming::EventType* update_time_event;
++    Core::TimingEventType* update_time_event;
+     std::chrono::seconds init_time;
+ 
+     SharedPageDef shared_page;
+diff --git a/src/core/hle/kernel/svc.cpp b/src/core/hle/kernel/svc.cpp
+index f23b569d700..000b16e192b 100644
+--- a/src/core/hle/kernel/svc.cpp
++++ b/src/core/hle/kernel/svc.cpp
+@@ -1111,9 +1111,10 @@ static void SleepThread(s64 nanoseconds) {
+ 
+ /// This returns the total CPU ticks elapsed since the CPU was powered-on
+ static s64 GetSystemTick() {
+-    s64 result = CoreTiming::GetTicks();
++    s64 result = Core::System::GetInstance().CoreTiming().GetTicks();
+     // Advance time to defeat dumb games (like Cubic Ninja) that busy-wait for the frame to end.
+-    CoreTiming::AddTicks(150); // Measured time between two calls on a 9.2 o3DS with Ninjhax 1.1b
++    // Measured time between two calls on a 9.2 o3DS with Ninjhax 1.1b
++    Core::System::GetInstance().CoreTiming().AddTicks(150);
+     return result;
+ }
+ 
+diff --git a/src/core/hle/kernel/thread.cpp b/src/core/hle/kernel/thread.cpp
+index 236e1d7b0be..8dd0bcaa538 100644
+--- a/src/core/hle/kernel/thread.cpp
++++ b/src/core/hle/kernel/thread.cpp
+@@ -48,7 +48,8 @@ Thread* ThreadManager::GetCurrentThread() const {
+ 
+ void Thread::Stop() {
+     // Cancel any outstanding wakeup events for this thread
+-    CoreTiming::UnscheduleEvent(thread_manager.ThreadWakeupEventType, thread_id);
++    Core::System::GetInstance().CoreTiming().UnscheduleEvent(thread_manager.ThreadWakeupEventType,
++                                                             thread_id);
+     thread_manager.wakeup_callback_table.erase(thread_id);
+ 
+     // Clean up thread from ready queue
+@@ -80,9 +81,11 @@ void Thread::Stop() {
+ void ThreadManager::SwitchContext(Thread* new_thread) {
+     Thread* previous_thread = GetCurrentThread();
+ 
++    Core::Timing& timing = Core::System::GetInstance().CoreTiming();
++
+     // Save context for previous thread
+     if (previous_thread) {
+-        previous_thread->last_running_ticks = CoreTiming::GetTicks();
++        previous_thread->last_running_ticks = timing.GetTicks();
+         Core::CPU().SaveContext(previous_thread->context);
+ 
+         if (previous_thread->status == ThreadStatus::Running) {
+@@ -99,7 +102,7 @@ void ThreadManager::SwitchContext(Thread* new_thread) {
+                    "Thread must be ready to become running.");
+ 
+         // Cancel any outstanding wakeup events for this thread
+-        CoreTiming::UnscheduleEvent(ThreadWakeupEventType, new_thread->thread_id);
++        timing.UnscheduleEvent(ThreadWakeupEventType, new_thread->thread_id);
+ 
+         auto previous_process = Core::System::GetInstance().Kernel().GetCurrentProcess();
+ 
+@@ -182,8 +185,8 @@ void Thread::WakeAfterDelay(s64 nanoseconds) {
+     if (nanoseconds == -1)
+         return;
+ 
+-    CoreTiming::ScheduleEvent(nsToCycles(nanoseconds), thread_manager.ThreadWakeupEventType,
+-                              thread_id);
++    Core::System::GetInstance().CoreTiming().ScheduleEvent(
++        nsToCycles(nanoseconds), thread_manager.ThreadWakeupEventType, thread_id);
+ }
+ 
+ void Thread::ResumeFromWait() {
+@@ -316,7 +319,7 @@ ResultVal<SharedPtr<Thread>> KernelSystem::CreateThread(std::string name, VAddr
+     thread->entry_point = entry_point;
+     thread->stack_top = stack_top;
+     thread->nominal_priority = thread->current_priority = priority;
+-    thread->last_running_ticks = CoreTiming::GetTicks();
++    thread->last_running_ticks = Core::System::GetInstance().CoreTiming().GetTicks();
+     thread->processor_id = processor_id;
+     thread->wait_objects.clear();
+     thread->wait_address = 0;
+@@ -462,10 +465,9 @@ VAddr Thread::GetCommandBufferAddress() const {
+ }
+ 
+ ThreadManager::ThreadManager() {
+-    ThreadWakeupEventType =
+-        CoreTiming::RegisterEvent("ThreadWakeupCallback", [this](u64 thread_id, s64 cycle_late) {
+-            ThreadWakeupCallback(thread_id, cycle_late);
+-        });
++    ThreadWakeupEventType = Core::System::GetInstance().CoreTiming().RegisterEvent(
++        "ThreadWakeupCallback",
++        [this](u64 thread_id, s64 cycle_late) { ThreadWakeupCallback(thread_id, cycle_late); });
+ }
+ 
+ ThreadManager::~ThreadManager() {
+diff --git a/src/core/hle/kernel/thread.h b/src/core/hle/kernel/thread.h
+index 06a7c5f4fcf..acb75a3749d 100644
+--- a/src/core/hle/kernel/thread.h
++++ b/src/core/hle/kernel/thread.h
+@@ -127,7 +127,7 @@ class ThreadManager {
+     std::unordered_map<u64, Thread*> wakeup_callback_table;
+ 
+     /// Event type for the thread wake up event
+-    CoreTiming::EventType* ThreadWakeupEventType = nullptr;
++    Core::TimingEventType* ThreadWakeupEventType = nullptr;
+ 
+     // Lists all threadsthat aren't deleted.
+     std::vector<SharedPtr<Thread>> thread_list;
+diff --git a/src/core/hle/kernel/timer.cpp b/src/core/hle/kernel/timer.cpp
+index 07a98a659c1..98e180aa62b 100644
+--- a/src/core/hle/kernel/timer.cpp
++++ b/src/core/hle/kernel/timer.cpp
+@@ -6,6 +6,7 @@
+ #include <unordered_map>
+ #include "common/assert.h"
+ #include "common/logging/log.h"
++#include "core/core.h"
+ #include "core/hle/kernel/handle_table.h"
+ #include "core/hle/kernel/object.h"
+ #include "core/hle/kernel/thread.h"
+@@ -55,13 +56,14 @@ void Timer::Set(s64 initial, s64 interval) {
+         // Immediately invoke the callback
+         Signal(0);
+     } else {
+-        CoreTiming::ScheduleEvent(nsToCycles(initial), timer_manager.timer_callback_event_type,
+-                                  callback_id);
++        Core::System::GetInstance().CoreTiming().ScheduleEvent(
++            nsToCycles(initial), timer_manager.timer_callback_event_type, callback_id);
+     }
+ }
+ 
+ void Timer::Cancel() {
+-    CoreTiming::UnscheduleEvent(timer_manager.timer_callback_event_type, callback_id);
++    Core::System::GetInstance().CoreTiming().UnscheduleEvent(
++        timer_manager.timer_callback_event_type, callback_id);
+ }
+ 
+ void Timer::Clear() {
+@@ -85,8 +87,9 @@ void Timer::Signal(s64 cycles_late) {
+ 
+     if (interval_delay != 0) {
+         // Reschedule the timer with the interval delay
+-        CoreTiming::ScheduleEvent(nsToCycles(interval_delay) - cycles_late,
+-                                  timer_manager.timer_callback_event_type, callback_id);
++        Core::System::GetInstance().CoreTiming().ScheduleEvent(
++            nsToCycles(interval_delay) - cycles_late, timer_manager.timer_callback_event_type,
++            callback_id);
+     }
+ }
+ 
+@@ -103,10 +106,9 @@ void TimerManager::TimerCallback(u64 callback_id, s64 cycles_late) {
+ }
+ 
+ TimerManager::TimerManager() {
+-    timer_callback_event_type =
+-        CoreTiming::RegisterEvent("TimerCallback", [this](u64 thread_id, s64 cycle_late) {
+-            TimerCallback(thread_id, cycle_late);
+-        });
++    timer_callback_event_type = Core::System::GetInstance().CoreTiming().RegisterEvent(
++        "TimerCallback",
++        [this](u64 thread_id, s64 cycle_late) { TimerCallback(thread_id, cycle_late); });
+ }
+ 
+ } // namespace Kernel
+diff --git a/src/core/hle/kernel/timer.h b/src/core/hle/kernel/timer.h
+index e0eccaa3341..3e446675cbc 100644
+--- a/src/core/hle/kernel/timer.h
++++ b/src/core/hle/kernel/timer.h
+@@ -20,7 +20,7 @@ class TimerManager {
+     void TimerCallback(u64 callback_id, s64 cycles_late);
+ 
+     /// The event type of the generic timer callback event
+-    CoreTiming::EventType* timer_callback_event_type = nullptr;
++    Core::TimingEventType* timer_callback_event_type = nullptr;
+ 
+     u64 next_timer_callback_id = 0;
+     std::unordered_map<u64, Timer*> timer_callback_table;
+diff --git a/src/core/hle/service/cam/cam.cpp b/src/core/hle/service/cam/cam.cpp
+index 21ae00f49ba..78d2e268ef3 100644
+--- a/src/core/hle/service/cam/cam.cpp
++++ b/src/core/hle/service/cam/cam.cpp
+@@ -151,7 +151,7 @@ void Module::StartReceiving(int port_id) {
+ 
+     // schedules a completion event according to the frame rate. The event will block on the
+     // capture task if it is not finished within the expected time
+-    CoreTiming::ScheduleEvent(
++    system.CoreTiming().ScheduleEvent(
+         msToCycles(LATENCY_BY_FRAME_RATE[static_cast<int>(camera.frame_rate)]),
+         completion_event_callback, port_id);
+ }
+@@ -160,7 +160,7 @@ void Module::CancelReceiving(int port_id) {
+     if (!ports[port_id].is_receiving)
+         return;
+     LOG_WARNING(Service_CAM, "tries to cancel an ongoing receiving process.");
+-    CoreTiming::UnscheduleEvent(completion_event_callback, port_id);
++    system.CoreTiming().UnscheduleEvent(completion_event_callback, port_id);
+     ports[port_id].capture_result.wait();
+     ports[port_id].is_receiving = false;
+ }
+@@ -1019,7 +1019,7 @@ void Module::Interface::DriverFinalize(Kernel::HLERequestContext& ctx) {
+     LOG_DEBUG(Service_CAM, "called");
+ }
+ 
+-Module::Module(Core::System& system) {
++Module::Module(Core::System& system) : system(system) {
+     using namespace Kernel;
+     for (PortConfig& port : ports) {
+         port.completion_event =
+@@ -1029,7 +1029,7 @@ Module::Module(Core::System& system) {
+         port.vsync_interrupt_event =
+             system.Kernel().CreateEvent(ResetType::OneShot, "CAM::vsync_interrupt_event");
+     }
+-    completion_event_callback = CoreTiming::RegisterEvent(
++    completion_event_callback = system.CoreTiming().RegisterEvent(
+         "CAM::CompletionEventCallBack",
+         [this](u64 userdata, s64 cycles_late) { CompletionEventCallBack(userdata, cycles_late); });
+ }
+diff --git a/src/core/hle/service/cam/cam.h b/src/core/hle/service/cam/cam.h
+index 4f608fc8e8c..32b5bb0b476 100644
+--- a/src/core/hle/service/cam/cam.h
++++ b/src/core/hle/service/cam/cam.h
+@@ -21,8 +21,8 @@ namespace Camera {
+ class CameraInterface;
+ }
+ 
+-namespace CoreTiming {
+-struct EventType;
++namespace Core {
++struct TimingEventType;
+ }
+ 
+ namespace Kernel {
+@@ -779,9 +779,10 @@ class Module final {
+ 
+     void LoadCameraImplementation(CameraConfig& camera, int camera_id);
+ 
++    Core::System& system;
+     std::array<CameraConfig, NumCameras> cameras;
+     std::array<PortConfig, 2> ports;
+-    CoreTiming::EventType* completion_event_callback;
++    Core::TimingEventType* completion_event_callback;
+     std::atomic<bool> is_camera_reload_pending{false};
+ };
+ 
+diff --git a/src/core/hle/service/hid/hid.cpp b/src/core/hle/service/hid/hid.cpp
+index 205d7860e83..805cc6c9191 100644
+--- a/src/core/hle/service/hid/hid.cpp
++++ b/src/core/hle/service/hid/hid.cpp
+@@ -128,7 +128,7 @@ void Module::UpdatePadCallback(u64 userdata, s64 cycles_late) {
+     // If we just updated index 0, provide a new timestamp
+     if (mem->pad.index == 0) {
+         mem->pad.index_reset_ticks_previous = mem->pad.index_reset_ticks;
+-        mem->pad.index_reset_ticks = (s64)CoreTiming::GetTicks();
++        mem->pad.index_reset_ticks = (s64)system.CoreTiming().GetTicks();
+     }
+ 
+     mem->touch.index = next_touch_index;
+@@ -152,7 +152,7 @@ void Module::UpdatePadCallback(u64 userdata, s64 cycles_late) {
+     // If we just updated index 0, provide a new timestamp
+     if (mem->touch.index == 0) {
+         mem->touch.index_reset_ticks_previous = mem->touch.index_reset_ticks;
+-        mem->touch.index_reset_ticks = (s64)CoreTiming::GetTicks();
++        mem->touch.index_reset_ticks = (s64)system.CoreTiming().GetTicks();
+     }
+ 
+     // Signal both handles when there's an update to Pad or touch
+@@ -160,7 +160,7 @@ void Module::UpdatePadCallback(u64 userdata, s64 cycles_late) {
+     event_pad_or_touch_2->Signal();
+ 
+     // Reschedule recurrent event
+-    CoreTiming::ScheduleEvent(pad_update_ticks - cycles_late, pad_update_event);
++    system.CoreTiming().ScheduleEvent(pad_update_ticks - cycles_late, pad_update_event);
+ }
+ 
+ void Module::UpdateAccelerometerCallback(u64 userdata, s64 cycles_late) {
+@@ -198,13 +198,14 @@ void Module::UpdateAccelerometerCallback(u64 userdata, s64 cycles_late) {
+     // If we just updated index 0, provide a new timestamp
+     if (mem->accelerometer.index == 0) {
+         mem->accelerometer.index_reset_ticks_previous = mem->accelerometer.index_reset_ticks;
+-        mem->accelerometer.index_reset_ticks = (s64)CoreTiming::GetTicks();
++        mem->accelerometer.index_reset_ticks = (s64)system.CoreTiming().GetTicks();
+     }
+ 
+     event_accelerometer->Signal();
+ 
+     // Reschedule recurrent event
+-    CoreTiming::ScheduleEvent(accelerometer_update_ticks - cycles_late, accelerometer_update_event);
++    system.CoreTiming().ScheduleEvent(accelerometer_update_ticks - cycles_late,
++                                      accelerometer_update_event);
+ }
+ 
+ void Module::UpdateGyroscopeCallback(u64 userdata, s64 cycles_late) {
+@@ -233,13 +234,13 @@ void Module::UpdateGyroscopeCallback(u64 userdata, s64 cycles_late) {
+     // If we just updated index 0, provide a new timestamp
+     if (mem->gyroscope.index == 0) {
+         mem->gyroscope.index_reset_ticks_previous = mem->gyroscope.index_reset_ticks;
+-        mem->gyroscope.index_reset_ticks = (s64)CoreTiming::GetTicks();
++        mem->gyroscope.index_reset_ticks = (s64)system.CoreTiming().GetTicks();
+     }
+ 
+     event_gyroscope->Signal();
+ 
+     // Reschedule recurrent event
+-    CoreTiming::ScheduleEvent(gyroscope_update_ticks - cycles_late, gyroscope_update_event);
++    system.CoreTiming().ScheduleEvent(gyroscope_update_ticks - cycles_late, gyroscope_update_event);
+ }
+ 
+ void Module::Interface::GetIPCHandles(Kernel::HLERequestContext& ctx) {
+@@ -257,7 +258,8 @@ void Module::Interface::EnableAccelerometer(Kernel::HLERequestContext& ctx) {
+ 
+     // Schedules the accelerometer update event if the accelerometer was just enabled
+     if (hid->enable_accelerometer_count == 1) {
+-        CoreTiming::ScheduleEvent(accelerometer_update_ticks, hid->accelerometer_update_event);
++        hid->system.CoreTiming().ScheduleEvent(accelerometer_update_ticks,
++                                               hid->accelerometer_update_event);
+     }
+ 
+     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+@@ -273,7 +275,7 @@ void Module::Interface::DisableAccelerometer(Kernel::HLERequestContext& ctx) {
+ 
+     // Unschedules the accelerometer update event if the accelerometer was just disabled
+     if (hid->enable_accelerometer_count == 0) {
+-        CoreTiming::UnscheduleEvent(hid->accelerometer_update_event, 0);
++        hid->system.CoreTiming().UnscheduleEvent(hid->accelerometer_update_event, 0);
+     }
+ 
+     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+@@ -289,7 +291,7 @@ void Module::Interface::EnableGyroscopeLow(Kernel::HLERequestContext& ctx) {
+ 
+     // Schedules the gyroscope update event if the gyroscope was just enabled
+     if (hid->enable_gyroscope_count == 1) {
+-        CoreTiming::ScheduleEvent(gyroscope_update_ticks, hid->gyroscope_update_event);
++        hid->system.CoreTiming().ScheduleEvent(gyroscope_update_ticks, hid->gyroscope_update_event);
+     }
+ 
+     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+@@ -305,7 +307,7 @@ void Module::Interface::DisableGyroscopeLow(Kernel::HLERequestContext& ctx) {
+ 
+     // Unschedules the gyroscope update event if the gyroscope was just disabled
+     if (hid->enable_gyroscope_count == 0) {
+-        CoreTiming::UnscheduleEvent(hid->gyroscope_update_event, 0);
++        hid->system.CoreTiming().UnscheduleEvent(hid->gyroscope_update_event, 0);
+     }
+ 
+     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+@@ -371,19 +373,21 @@ Module::Module(Core::System& system) : system(system) {
+     event_debug_pad = system.Kernel().CreateEvent(ResetType::OneShot, "HID:EventDebugPad");
+ 
+     // Register update callbacks
++    Core::Timing& timing = system.CoreTiming();
+     pad_update_event =
+-        CoreTiming::RegisterEvent("HID::UpdatePadCallback", [this](u64 userdata, s64 cycles_late) {
++        timing.RegisterEvent("HID::UpdatePadCallback", [this](u64 userdata, s64 cycles_late) {
+             UpdatePadCallback(userdata, cycles_late);
+         });
+-    accelerometer_update_event = CoreTiming::RegisterEvent(
++    accelerometer_update_event = timing.RegisterEvent(
+         "HID::UpdateAccelerometerCallback", [this](u64 userdata, s64 cycles_late) {
+             UpdateAccelerometerCallback(userdata, cycles_late);
+         });
+-    gyroscope_update_event = CoreTiming::RegisterEvent(
+-        "HID::UpdateGyroscopeCallback",
+-        [this](u64 userdata, s64 cycles_late) { UpdateGyroscopeCallback(userdata, cycles_late); });
++    gyroscope_update_event =
++        timing.RegisterEvent("HID::UpdateGyroscopeCallback", [this](u64 userdata, s64 cycles_late) {
++            UpdateGyroscopeCallback(userdata, cycles_late);
++        });
+ 
+-    CoreTiming::ScheduleEvent(pad_update_ticks, pad_update_event);
++    timing.ScheduleEvent(pad_update_ticks, pad_update_event);
+ }
+ 
+ void Module::ReloadInputDevices() {
+diff --git a/src/core/hle/service/hid/hid.h b/src/core/hle/service/hid/hid.h
+index 45f94bb306e..de0b6f0a979 100644
+--- a/src/core/hle/service/hid/hid.h
++++ b/src/core/hle/service/hid/hid.h
+@@ -27,8 +27,8 @@ class Event;
+ class SharedMemory;
+ } // namespace Kernel
+ 
+-namespace CoreTiming {
+-struct EventType;
++namespace Core {
++struct TimingEventType;
+ };
+ 
+ namespace Service::HID {
+@@ -325,9 +325,9 @@ class Module final {
+     int enable_accelerometer_count = 0; // positive means enabled
+     int enable_gyroscope_count = 0;     // positive means enabled
+ 
+-    CoreTiming::EventType* pad_update_event;
+-    CoreTiming::EventType* accelerometer_update_event;
+-    CoreTiming::EventType* gyroscope_update_event;
++    Core::TimingEventType* pad_update_event;
++    Core::TimingEventType* accelerometer_update_event;
++    Core::TimingEventType* gyroscope_update_event;
+ 
+     std::atomic<bool> is_device_reload_pending{true};
+     std::array<std::unique_ptr<Input::ButtonDevice>, Settings::NativeButton::NUM_BUTTONS_HID>
+diff --git a/src/core/hle/service/ir/extra_hid.cpp b/src/core/hle/service/ir/extra_hid.cpp
+index a53c9fbf74a..31b63257e59 100644
+--- a/src/core/hle/service/ir/extra_hid.cpp
++++ b/src/core/hle/service/ir/extra_hid.cpp
+@@ -4,6 +4,7 @@
+ 
+ #include "common/alignment.h"
+ #include "common/string_util.h"
++#include "core/core.h"
+ #include "core/core_timing.h"
+ #include "core/hle/service/ir/extra_hid.h"
+ #include "core/movie.h"
+@@ -144,11 +145,11 @@ ExtraHID::ExtraHID(SendFunc send_func) : IRDevice(send_func) {
+         0x65,
+     }};
+ 
+-    hid_polling_callback_id =
+-        CoreTiming::RegisterEvent("ExtraHID::SendHIDStatus", [this](u64, s64 cycles_late) {
++    hid_polling_callback_id = Core::System::GetInstance().CoreTiming().RegisterEvent(
++        "ExtraHID::SendHIDStatus", [this](u64, s64 cycles_late) {
+             SendHIDStatus();
+-            CoreTiming::ScheduleEvent(msToCycles(hid_period) - cycles_late,
+-                                      hid_polling_callback_id);
++            Core::System::GetInstance().CoreTiming().ScheduleEvent(
++                msToCycles(hid_period) - cycles_late, hid_polling_callback_id);
+         });
+ }
+ 
+@@ -159,7 +160,7 @@ ExtraHID::~ExtraHID() {
+ void ExtraHID::OnConnect() {}
+ 
+ void ExtraHID::OnDisconnect() {
+-    CoreTiming::UnscheduleEvent(hid_polling_callback_id, 0);
++    Core::System::GetInstance().CoreTiming().UnscheduleEvent(hid_polling_callback_id, 0);
+ }
+ 
+ void ExtraHID::HandleConfigureHIDPollingRequest(const std::vector<u8>& request) {
+@@ -170,9 +171,10 @@ void ExtraHID::HandleConfigureHIDPollingRequest(const std::vector<u8>& request)
+     }
+ 
+     // Change HID input polling interval
+-    CoreTiming::UnscheduleEvent(hid_polling_callback_id, 0);
++    Core::System::GetInstance().CoreTiming().UnscheduleEvent(hid_polling_callback_id, 0);
+     hid_period = request[1];
+-    CoreTiming::ScheduleEvent(msToCycles(hid_period), hid_polling_callback_id);
++    Core::System::GetInstance().CoreTiming().ScheduleEvent(msToCycles(hid_period),
++                                                           hid_polling_callback_id);
+ }
+ 
+ void ExtraHID::HandleReadCalibrationDataRequest(const std::vector<u8>& request_buf) {
+diff --git a/src/core/hle/service/ir/extra_hid.h b/src/core/hle/service/ir/extra_hid.h
+index dc4691d8753..f9c2f050b6a 100644
+--- a/src/core/hle/service/ir/extra_hid.h
++++ b/src/core/hle/service/ir/extra_hid.h
+@@ -11,9 +11,9 @@
+ #include "core/frontend/input.h"
+ #include "core/hle/service/ir/ir_user.h"
+ 
+-namespace CoreTiming {
+-struct EventType;
+-} // namespace CoreTiming
++namespace Core {
++struct TimingEventType;
++} // namespace Core
+ 
+ namespace Service::IR {
+ 
+@@ -57,7 +57,7 @@ class ExtraHID final : public IRDevice {
+     void LoadInputDevices();
+ 
+     u8 hid_period;
+-    CoreTiming::EventType* hid_polling_callback_id;
++    Core::TimingEventType* hid_polling_callback_id;
+     std::array<u8, 0x40> calibration_data;
+     std::unique_ptr<Input::ButtonDevice> zl;
+     std::unique_ptr<Input::ButtonDevice> zr;
+diff --git a/src/core/hle/service/ir/ir_rst.cpp b/src/core/hle/service/ir/ir_rst.cpp
+index 147c918612b..33e4fc0ff30 100644
+--- a/src/core/hle/service/ir/ir_rst.cpp
++++ b/src/core/hle/service/ir/ir_rst.cpp
+@@ -100,13 +100,13 @@ void IR_RST::UpdateCallback(u64 userdata, s64 cycles_late) {
+     // If we just updated index 0, provide a new timestamp
+     if (mem->index == 0) {
+         mem->index_reset_ticks_previous = mem->index_reset_ticks;
+-        mem->index_reset_ticks = CoreTiming::GetTicks();
++        mem->index_reset_ticks = system.CoreTiming().GetTicks();
+     }
+ 
+     update_event->Signal();
+ 
+     // Reschedule recurrent event
+-    CoreTiming::ScheduleEvent(msToCycles(update_period) - cycles_late, update_callback_id);
++    system.CoreTiming().ScheduleEvent(msToCycles(update_period) - cycles_late, update_callback_id);
+ }
+ 
+ void IR_RST::GetHandles(Kernel::HLERequestContext& ctx) {
+@@ -126,7 +126,7 @@ void IR_RST::Initialize(Kernel::HLERequestContext& ctx) {
+ 
+     next_pad_index = 0;
+     is_device_reload_pending.store(true);
+-    CoreTiming::ScheduleEvent(msToCycles(update_period), update_callback_id);
++    system.CoreTiming().ScheduleEvent(msToCycles(update_period), update_callback_id);
+ 
+     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+     rb.Push(RESULT_SUCCESS);
+@@ -137,7 +137,7 @@ void IR_RST::Initialize(Kernel::HLERequestContext& ctx) {
+ void IR_RST::Shutdown(Kernel::HLERequestContext& ctx) {
+     IPC::RequestParser rp(ctx, 0x03, 0, 0);
+ 
+-    CoreTiming::UnscheduleEvent(update_callback_id, 0);
++    system.CoreTiming().UnscheduleEvent(update_callback_id, 0);
+     UnloadInputDevices();
+ 
+     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+@@ -145,7 +145,7 @@ void IR_RST::Shutdown(Kernel::HLERequestContext& ctx) {
+     LOG_DEBUG(Service_IR, "called");
+ }
+ 
+-IR_RST::IR_RST(Core::System& system) : ServiceFramework("ir:rst", 1) {
++IR_RST::IR_RST(Core::System& system) : ServiceFramework("ir:rst", 1), system(system) {
+     using namespace Kernel;
+     // Note: these two kernel objects are even available before Initialize service function is
+     // called.
+@@ -154,10 +154,9 @@ IR_RST::IR_RST(Core::System& system) : ServiceFramework("ir:rst", 1) {
+                                                        MemoryRegion::BASE, "IRRST:SharedMemory");
+     update_event = system.Kernel().CreateEvent(ResetType::OneShot, "IRRST:UpdateEvent");
+ 
+-    update_callback_id =
+-        CoreTiming::RegisterEvent("IRRST:UpdateCallBack", [this](u64 userdata, s64 cycles_late) {
+-            UpdateCallback(userdata, cycles_late);
+-        });
++    update_callback_id = system.CoreTiming().RegisterEvent(
++        "IRRST:UpdateCallBack",
++        [this](u64 userdata, s64 cycles_late) { UpdateCallback(userdata, cycles_late); });
+ 
+     static const FunctionInfo functions[] = {
+         {0x00010000, &IR_RST::GetHandles, "GetHandles"},
+diff --git a/src/core/hle/service/ir/ir_rst.h b/src/core/hle/service/ir/ir_rst.h
+index 821fb0b2f22..e72adae7cea 100644
+--- a/src/core/hle/service/ir/ir_rst.h
++++ b/src/core/hle/service/ir/ir_rst.h
+@@ -18,8 +18,8 @@ class Event;
+ class SharedMemory;
+ } // namespace Kernel
+ 
+-namespace CoreTiming {
+-struct EventType;
++namespace Core {
++struct TimingEventType;
+ };
+ 
+ namespace Service::IR {
+@@ -77,10 +77,11 @@ class IR_RST final : public ServiceFramework<IR_RST> {
+     void UnloadInputDevices();
+     void UpdateCallback(u64 userdata, s64 cycles_late);
+ 
++    Core::System& system;
+     Kernel::SharedPtr<Kernel::Event> update_event;
+     Kernel::SharedPtr<Kernel::SharedMemory> shared_memory;
+     u32 next_pad_index{0};
+-    CoreTiming::EventType* update_callback_id;
++    Core::TimingEventType* update_callback_id;
+     std::unique_ptr<Input::ButtonDevice> zl_button;
+     std::unique_ptr<Input::ButtonDevice> zr_button;
+     std::unique_ptr<Input::AnalogDevice> c_stick;
+diff --git a/src/core/hle/service/ir/ir_user.h b/src/core/hle/service/ir/ir_user.h
+index fea0794bcba..71d5e163036 100644
+--- a/src/core/hle/service/ir/ir_user.h
++++ b/src/core/hle/service/ir/ir_user.h
+@@ -14,10 +14,6 @@ class Event;
+ class SharedMemory;
+ } // namespace Kernel
+ 
+-namespace CoreTiming {
+-struct EventType;
+-};
+-
+ namespace Service::IR {
+ 
+ class BufferManager;
+diff --git a/src/core/hle/service/nwm/nwm_uds.cpp b/src/core/hle/service/nwm/nwm_uds.cpp
+index 92d712263e8..85b309f43c2 100644
+--- a/src/core/hle/service/nwm/nwm_uds.cpp
++++ b/src/core/hle/service/nwm/nwm_uds.cpp
+@@ -88,7 +88,7 @@ struct Node {
+ static std::map<MacAddress, Node> node_map;
+ 
+ // Event that will generate and send the 802.11 beacon frames.
+-static CoreTiming::EventType* beacon_broadcast_event;
++static Core::TimingEventType* beacon_broadcast_event;
+ 
+ // Callback identifier for the OnWifiPacketReceived event.
+ static Network::RoomMember::CallbackHandle<Network::WifiPacket> wifi_packet_received;
+@@ -955,8 +955,8 @@ void NWM_UDS::BeginHostingNetwork(Kernel::HLERequestContext& ctx) {
+     connection_status_event->Signal();
+ 
+     // Start broadcasting the network, send a beacon frame every 102.4ms.
+-    CoreTiming::ScheduleEvent(msToCycles(DefaultBeaconInterval * MillisecondsPerTU),
+-                              beacon_broadcast_event, 0);
++    system.CoreTiming().ScheduleEvent(msToCycles(DefaultBeaconInterval * MillisecondsPerTU),
++                                      beacon_broadcast_event, 0);
+ 
+     LOG_DEBUG(Service_NWM, "An UDS network has been created.");
+ 
+@@ -976,7 +976,7 @@ void NWM_UDS::DestroyNetwork(Kernel::HLERequestContext& ctx) {
+     IPC::RequestParser rp(ctx, 0x08, 0, 0);
+ 
+     // Unschedule the beacon broadcast event.
+-    CoreTiming::UnscheduleEvent(beacon_broadcast_event, 0);
++    system.CoreTiming().UnscheduleEvent(beacon_broadcast_event, 0);
+ 
+     // Only a host can destroy
+     std::lock_guard<std::mutex> lock(connection_status_mutex);
+@@ -1336,7 +1336,7 @@ void NWM_UDS::DecryptBeaconData(Kernel::HLERequestContext& ctx) {
+ }
+ 
+ // Sends a 802.11 beacon frame with information about the current network.
+-static void BeaconBroadcastCallback(u64 userdata, s64 cycles_late) {
++void NWM_UDS::BeaconBroadcastCallback(u64 userdata, s64 cycles_late) {
+     // Don't do anything if we're not actually hosting a network
+     if (connection_status.status != static_cast<u32>(NetworkStatus::ConnectedAsHost))
+         return;
+@@ -1353,8 +1353,9 @@ static void BeaconBroadcastCallback(u64 userdata, s64 cycles_late) {
+     SendPacket(packet);
+ 
+     // Start broadcasting the network, send a beacon frame every 102.4ms.
+-    CoreTiming::ScheduleEvent(msToCycles(DefaultBeaconInterval * MillisecondsPerTU) - cycles_late,
+-                              beacon_broadcast_event, 0);
++    system.CoreTiming().ScheduleEvent(msToCycles(DefaultBeaconInterval * MillisecondsPerTU) -
++                                          cycles_late,
++                                      beacon_broadcast_event, 0);
+ }
+ 
+ NWM_UDS::NWM_UDS(Core::System& system) : ServiceFramework("nwm::UDS"), system(system) {
+@@ -1394,8 +1395,9 @@ NWM_UDS::NWM_UDS(Core::System& system) : ServiceFramework("nwm::UDS"), system(sy
+ 
+     RegisterHandlers(functions);
+ 
+-    beacon_broadcast_event =
+-        CoreTiming::RegisterEvent("UDS::BeaconBroadcastCallback", BeaconBroadcastCallback);
++    beacon_broadcast_event = system.CoreTiming().RegisterEvent(
++        "UDS::BeaconBroadcastCallback",
++        [this](u64 userdata, s64 cycles_late) { BeaconBroadcastCallback(userdata, cycles_late); });
+ 
+     CryptoPP::AutoSeededRandomPool rng;
+     auto mac = SharedPage::DefaultMac;
+@@ -1428,7 +1430,7 @@ NWM_UDS::~NWM_UDS() {
+     if (auto room_member = Network::GetRoomMember().lock())
+         room_member->Unbind(wifi_packet_received);
+ 
+-    CoreTiming::UnscheduleEvent(beacon_broadcast_event, 0);
++    system.CoreTiming().UnscheduleEvent(beacon_broadcast_event, 0);
+ }
+ 
+ } // namespace Service::NWM
+diff --git a/src/core/hle/service/nwm/nwm_uds.h b/src/core/hle/service/nwm/nwm_uds.h
+index b6cac1ee0df..3f050b5a5b7 100644
+--- a/src/core/hle/service/nwm/nwm_uds.h
++++ b/src/core/hle/service/nwm/nwm_uds.h
+@@ -352,6 +352,8 @@ class NWM_UDS final : public ServiceFramework<NWM_UDS> {
+      *      2, 3: output buffer return descriptor & ptr
+      */
+     void DecryptBeaconData(Kernel::HLERequestContext& ctx);
++
++    void BeaconBroadcastCallback(u64 userdata, s64 cycles_late);
+ };
+ 
+ } // namespace Service::NWM
+diff --git a/src/core/hw/gpu.cpp b/src/core/hw/gpu.cpp
+index d68068cbb0d..47bb852f802 100644
+--- a/src/core/hw/gpu.cpp
++++ b/src/core/hw/gpu.cpp
+@@ -31,7 +31,7 @@ Regs g_regs;
+ /// 268MHz CPU clocks / 60Hz frames per second
+ const u64 frame_ticks = static_cast<u64>(BASE_CLOCK_RATE_ARM11 / SCREEN_REFRESH_RATE);
+ /// Event id for CoreTiming
+-static CoreTiming::EventType* vblank_event;
++static Core::TimingEventType* vblank_event;
+ 
+ template <typename T>
+ inline void Read(T& var, const u32 raw_addr) {
+@@ -522,7 +522,7 @@ static void VBlankCallback(u64 userdata, s64 cycles_late) {
+     Service::GSP::SignalInterrupt(Service::GSP::InterruptId::PDC1);
+ 
+     // Reschedule recurrent event
+-    CoreTiming::ScheduleEvent(frame_ticks - cycles_late, vblank_event);
++    Core::System::GetInstance().CoreTiming().ScheduleEvent(frame_ticks - cycles_late, vblank_event);
+ }
+ 
+ /// Initialize hardware
+@@ -555,8 +555,9 @@ void Init() {
+     framebuffer_sub.color_format.Assign(Regs::PixelFormat::RGB8);
+     framebuffer_sub.active_fb = 0;
+ 
+-    vblank_event = CoreTiming::RegisterEvent("GPU::VBlankCallback", VBlankCallback);
+-    CoreTiming::ScheduleEvent(frame_ticks, vblank_event);
++    Core::Timing& timing = Core::System::GetInstance().CoreTiming();
++    vblank_event = timing.RegisterEvent("GPU::VBlankCallback", VBlankCallback);
++    timing.ScheduleEvent(frame_ticks, vblank_event);
+ 
+     LOG_DEBUG(HW_GPU, "initialized OK");
+ }
+diff --git a/src/tests/core/arm/arm_test_common.cpp b/src/tests/core/arm/arm_test_common.cpp
+index 1127a504fb8..58b60f506c2 100644
+--- a/src/tests/core/arm/arm_test_common.cpp
++++ b/src/tests/core/arm/arm_test_common.cpp
+@@ -16,10 +16,10 @@ static Memory::PageTable* page_table = nullptr;
+ TestEnvironment::TestEnvironment(bool mutable_memory_)
+     : mutable_memory(mutable_memory_), test_memory(std::make_shared<TestMemory>(this)) {
+ 
+-    CoreTiming::Init();
+     // HACK: some memory functions are currently referring kernel from the global instance,
+     //       so we need to create the kernel object there.
+     //       Change this when all global states are eliminated.
++    Core::System::GetInstance().timing = std::make_unique<Core::Timing>();
+     Core::System::GetInstance().kernel = std::make_unique<Kernel::KernelSystem>(0);
+     kernel = Core::System::GetInstance().kernel.get();
+ 
+@@ -38,8 +38,6 @@ TestEnvironment::TestEnvironment(bool mutable_memory_)
+ TestEnvironment::~TestEnvironment() {
+     Memory::UnmapRegion(*page_table, 0x80000000, 0x80000000);
+     Memory::UnmapRegion(*page_table, 0x00000000, 0x80000000);
+-
+-    CoreTiming::Shutdown();
+ }
+ 
+ void TestEnvironment::SetMemory64(VAddr vaddr, u64 value) {
+diff --git a/src/tests/core/core_timing.cpp b/src/tests/core/core_timing.cpp
+index 2242c14cf20..1cfd9e971ed 100644
+--- a/src/tests/core/core_timing.cpp
++++ b/src/tests/core/core_timing.cpp
+@@ -28,100 +28,90 @@ void CallbackTemplate(u64 userdata, s64 cycles_late) {
+     REQUIRE(lateness == cycles_late);
+ }
+ 
+-class ScopeInit final {
+-public:
+-    ScopeInit() {
+-        CoreTiming::Init();
+-    }
+-    ~ScopeInit() {
+-        CoreTiming::Shutdown();
+-    }
+-};
+-
+-static void AdvanceAndCheck(u32 idx, int downcount, int expected_lateness = 0,
++static void AdvanceAndCheck(Core::Timing& timing, u32 idx, int downcount, int expected_lateness = 0,
+                             int cpu_downcount = 0) {
+     callbacks_ran_flags = 0;
+     expected_callback = CB_IDS[idx];
+     lateness = expected_lateness;
+ 
+-    CoreTiming::AddTicks(CoreTiming::GetDowncount() -
+-                         cpu_downcount); // Pretend we executed X cycles of instructions.
+-    CoreTiming::Advance();
++    timing.AddTicks(timing.GetDowncount() -
++                    cpu_downcount); // Pretend we executed X cycles of instructions.
++    timing.Advance();
+ 
+     REQUIRE(decltype(callbacks_ran_flags)().set(idx) == callbacks_ran_flags);
+-    REQUIRE(downcount == CoreTiming::GetDowncount());
++    REQUIRE(downcount == timing.GetDowncount());
+ }
+ 
+ TEST_CASE("CoreTiming[BasicOrder]", "[core]") {
+-    ScopeInit guard;
++    Core::Timing timing;
+ 
+-    CoreTiming::EventType* cb_a = CoreTiming::RegisterEvent("callbackA", CallbackTemplate<0>);
+-    CoreTiming::EventType* cb_b = CoreTiming::RegisterEvent("callbackB", CallbackTemplate<1>);
+-    CoreTiming::EventType* cb_c = CoreTiming::RegisterEvent("callbackC", CallbackTemplate<2>);
+-    CoreTiming::EventType* cb_d = CoreTiming::RegisterEvent("callbackD", CallbackTemplate<3>);
+-    CoreTiming::EventType* cb_e = CoreTiming::RegisterEvent("callbackE", CallbackTemplate<4>);
++    Core::TimingEventType* cb_a = timing.RegisterEvent("callbackA", CallbackTemplate<0>);
++    Core::TimingEventType* cb_b = timing.RegisterEvent("callbackB", CallbackTemplate<1>);
++    Core::TimingEventType* cb_c = timing.RegisterEvent("callbackC", CallbackTemplate<2>);
++    Core::TimingEventType* cb_d = timing.RegisterEvent("callbackD", CallbackTemplate<3>);
++    Core::TimingEventType* cb_e = timing.RegisterEvent("callbackE", CallbackTemplate<4>);
+ 
+     // Enter slice 0
+-    CoreTiming::Advance();
++    timing.Advance();
+ 
+     // D -> B -> C -> A -> E
+-    CoreTiming::ScheduleEvent(1000, cb_a, CB_IDS[0]);
+-    REQUIRE(1000 == CoreTiming::GetDowncount());
+-    CoreTiming::ScheduleEvent(500, cb_b, CB_IDS[1]);
+-    REQUIRE(500 == CoreTiming::GetDowncount());
+-    CoreTiming::ScheduleEvent(800, cb_c, CB_IDS[2]);
+-    REQUIRE(500 == CoreTiming::GetDowncount());
+-    CoreTiming::ScheduleEvent(100, cb_d, CB_IDS[3]);
+-    REQUIRE(100 == CoreTiming::GetDowncount());
+-    CoreTiming::ScheduleEvent(1200, cb_e, CB_IDS[4]);
+-    REQUIRE(100 == CoreTiming::GetDowncount());
+-
+-    AdvanceAndCheck(3, 400);
+-    AdvanceAndCheck(1, 300);
+-    AdvanceAndCheck(2, 200);
+-    AdvanceAndCheck(0, 200);
+-    AdvanceAndCheck(4, MAX_SLICE_LENGTH);
++    timing.ScheduleEvent(1000, cb_a, CB_IDS[0]);
++    REQUIRE(1000 == timing.GetDowncount());
++    timing.ScheduleEvent(500, cb_b, CB_IDS[1]);
++    REQUIRE(500 == timing.GetDowncount());
++    timing.ScheduleEvent(800, cb_c, CB_IDS[2]);
++    REQUIRE(500 == timing.GetDowncount());
++    timing.ScheduleEvent(100, cb_d, CB_IDS[3]);
++    REQUIRE(100 == timing.GetDowncount());
++    timing.ScheduleEvent(1200, cb_e, CB_IDS[4]);
++    REQUIRE(100 == timing.GetDowncount());
++
++    AdvanceAndCheck(timing, 3, 400);
++    AdvanceAndCheck(timing, 1, 300);
++    AdvanceAndCheck(timing, 2, 200);
++    AdvanceAndCheck(timing, 0, 200);
++    AdvanceAndCheck(timing, 4, MAX_SLICE_LENGTH);
+ }
+ 
+ TEST_CASE("CoreTiming[Threadsave]", "[core]") {
+-    ScopeInit guard;
++    Core::Timing timing;
+ 
+-    CoreTiming::EventType* cb_a = CoreTiming::RegisterEvent("callbackA", CallbackTemplate<0>);
+-    CoreTiming::EventType* cb_b = CoreTiming::RegisterEvent("callbackB", CallbackTemplate<1>);
+-    CoreTiming::EventType* cb_c = CoreTiming::RegisterEvent("callbackC", CallbackTemplate<2>);
+-    CoreTiming::EventType* cb_d = CoreTiming::RegisterEvent("callbackD", CallbackTemplate<3>);
+-    CoreTiming::EventType* cb_e = CoreTiming::RegisterEvent("callbackE", CallbackTemplate<4>);
++    Core::TimingEventType* cb_a = timing.RegisterEvent("callbackA", CallbackTemplate<0>);
++    Core::TimingEventType* cb_b = timing.RegisterEvent("callbackB", CallbackTemplate<1>);
++    Core::TimingEventType* cb_c = timing.RegisterEvent("callbackC", CallbackTemplate<2>);
++    Core::TimingEventType* cb_d = timing.RegisterEvent("callbackD", CallbackTemplate<3>);
++    Core::TimingEventType* cb_e = timing.RegisterEvent("callbackE", CallbackTemplate<4>);
+ 
+     // Enter slice 0
+-    CoreTiming::Advance();
++    timing.Advance();
+ 
+     // D -> B -> C -> A -> E
+-    CoreTiming::ScheduleEventThreadsafe(1000, cb_a, CB_IDS[0]);
++    timing.ScheduleEventThreadsafe(1000, cb_a, CB_IDS[0]);
+     // Manually force since ScheduleEventThreadsafe doesn't call it
+-    CoreTiming::ForceExceptionCheck(1000);
+-    REQUIRE(1000 == CoreTiming::GetDowncount());
+-    CoreTiming::ScheduleEventThreadsafe(500, cb_b, CB_IDS[1]);
++    timing.ForceExceptionCheck(1000);
++    REQUIRE(1000 == timing.GetDowncount());
++    timing.ScheduleEventThreadsafe(500, cb_b, CB_IDS[1]);
+     // Manually force since ScheduleEventThreadsafe doesn't call it
+-    CoreTiming::ForceExceptionCheck(500);
+-    REQUIRE(500 == CoreTiming::GetDowncount());
+-    CoreTiming::ScheduleEventThreadsafe(800, cb_c, CB_IDS[2]);
++    timing.ForceExceptionCheck(500);
++    REQUIRE(500 == timing.GetDowncount());
++    timing.ScheduleEventThreadsafe(800, cb_c, CB_IDS[2]);
+     // Manually force since ScheduleEventThreadsafe doesn't call it
+-    CoreTiming::ForceExceptionCheck(800);
+-    REQUIRE(500 == CoreTiming::GetDowncount());
+-    CoreTiming::ScheduleEventThreadsafe(100, cb_d, CB_IDS[3]);
++    timing.ForceExceptionCheck(800);
++    REQUIRE(500 == timing.GetDowncount());
++    timing.ScheduleEventThreadsafe(100, cb_d, CB_IDS[3]);
+     // Manually force since ScheduleEventThreadsafe doesn't call it
+-    CoreTiming::ForceExceptionCheck(100);
+-    REQUIRE(100 == CoreTiming::GetDowncount());
+-    CoreTiming::ScheduleEventThreadsafe(1200, cb_e, CB_IDS[4]);
++    timing.ForceExceptionCheck(100);
++    REQUIRE(100 == timing.GetDowncount());
++    timing.ScheduleEventThreadsafe(1200, cb_e, CB_IDS[4]);
+     // Manually force since ScheduleEventThreadsafe doesn't call it
+-    CoreTiming::ForceExceptionCheck(1200);
+-    REQUIRE(100 == CoreTiming::GetDowncount());
+-
+-    AdvanceAndCheck(3, 400);
+-    AdvanceAndCheck(1, 300);
+-    AdvanceAndCheck(2, 200);
+-    AdvanceAndCheck(0, 200);
+-    AdvanceAndCheck(4, MAX_SLICE_LENGTH);
++    timing.ForceExceptionCheck(1200);
++    REQUIRE(100 == timing.GetDowncount());
++
++    AdvanceAndCheck(timing, 3, 400);
++    AdvanceAndCheck(timing, 1, 300);
++    AdvanceAndCheck(timing, 2, 200);
++    AdvanceAndCheck(timing, 0, 200);
++    AdvanceAndCheck(timing, 4, MAX_SLICE_LENGTH);
+ }
+ 
+ namespace SharedSlotTest {
+@@ -141,97 +131,98 @@ void FifoCallback(u64 userdata, s64 cycles_late) {
+ TEST_CASE("CoreTiming[SharedSlot]", "[core]") {
+     using namespace SharedSlotTest;
+ 
+-    ScopeInit guard;
++    Core::Timing timing;
+ 
+-    CoreTiming::EventType* cb_a = CoreTiming::RegisterEvent("callbackA", FifoCallback<0>);
+-    CoreTiming::EventType* cb_b = CoreTiming::RegisterEvent("callbackB", FifoCallback<1>);
+-    CoreTiming::EventType* cb_c = CoreTiming::RegisterEvent("callbackC", FifoCallback<2>);
+-    CoreTiming::EventType* cb_d = CoreTiming::RegisterEvent("callbackD", FifoCallback<3>);
+-    CoreTiming::EventType* cb_e = CoreTiming::RegisterEvent("callbackE", FifoCallback<4>);
++    Core::TimingEventType* cb_a = timing.RegisterEvent("callbackA", FifoCallback<0>);
++    Core::TimingEventType* cb_b = timing.RegisterEvent("callbackB", FifoCallback<1>);
++    Core::TimingEventType* cb_c = timing.RegisterEvent("callbackC", FifoCallback<2>);
++    Core::TimingEventType* cb_d = timing.RegisterEvent("callbackD", FifoCallback<3>);
++    Core::TimingEventType* cb_e = timing.RegisterEvent("callbackE", FifoCallback<4>);
+ 
+-    CoreTiming::ScheduleEvent(1000, cb_a, CB_IDS[0]);
+-    CoreTiming::ScheduleEvent(1000, cb_b, CB_IDS[1]);
+-    CoreTiming::ScheduleEvent(1000, cb_c, CB_IDS[2]);
+-    CoreTiming::ScheduleEvent(1000, cb_d, CB_IDS[3]);
+-    CoreTiming::ScheduleEvent(1000, cb_e, CB_IDS[4]);
++    timing.ScheduleEvent(1000, cb_a, CB_IDS[0]);
++    timing.ScheduleEvent(1000, cb_b, CB_IDS[1]);
++    timing.ScheduleEvent(1000, cb_c, CB_IDS[2]);
++    timing.ScheduleEvent(1000, cb_d, CB_IDS[3]);
++    timing.ScheduleEvent(1000, cb_e, CB_IDS[4]);
+ 
+     // Enter slice 0
+-    CoreTiming::Advance();
+-    REQUIRE(1000 == CoreTiming::GetDowncount());
++    timing.Advance();
++    REQUIRE(1000 == timing.GetDowncount());
+ 
+     callbacks_ran_flags = 0;
+     counter = 0;
+     lateness = 0;
+-    CoreTiming::AddTicks(CoreTiming::GetDowncount());
+-    CoreTiming::Advance();
+-    REQUIRE(MAX_SLICE_LENGTH == CoreTiming::GetDowncount());
++    timing.AddTicks(timing.GetDowncount());
++    timing.Advance();
++    REQUIRE(MAX_SLICE_LENGTH == timing.GetDowncount());
+     REQUIRE(0x1FULL == callbacks_ran_flags.to_ullong());
+ }
+ 
+ TEST_CASE("CoreTiming[PredictableLateness]", "[core]") {
+-    ScopeInit guard;
++    Core::Timing timing;
+ 
+-    CoreTiming::EventType* cb_a = CoreTiming::RegisterEvent("callbackA", CallbackTemplate<0>);
+-    CoreTiming::EventType* cb_b = CoreTiming::RegisterEvent("callbackB", CallbackTemplate<1>);
++    Core::TimingEventType* cb_a = timing.RegisterEvent("callbackA", CallbackTemplate<0>);
++    Core::TimingEventType* cb_b = timing.RegisterEvent("callbackB", CallbackTemplate<1>);
+ 
+     // Enter slice 0
+-    CoreTiming::Advance();
++    timing.Advance();
+ 
+-    CoreTiming::ScheduleEvent(100, cb_a, CB_IDS[0]);
+-    CoreTiming::ScheduleEvent(200, cb_b, CB_IDS[1]);
++    timing.ScheduleEvent(100, cb_a, CB_IDS[0]);
++    timing.ScheduleEvent(200, cb_b, CB_IDS[1]);
+ 
+-    AdvanceAndCheck(0, 90, 10, -10); // (100 - 10)
+-    AdvanceAndCheck(1, MAX_SLICE_LENGTH, 50, -50);
++    AdvanceAndCheck(timing, 0, 90, 10, -10); // (100 - 10)
++    AdvanceAndCheck(timing, 1, MAX_SLICE_LENGTH, 50, -50);
+ }
+ 
+ namespace ChainSchedulingTest {
+ static int reschedules = 0;
+ 
+-static void RescheduleCallback(u64 userdata, s64 cycles_late) {
++static void RescheduleCallback(Core::Timing& timing, u64 userdata, s64 cycles_late) {
+     --reschedules;
+     REQUIRE(reschedules >= 0);
+     REQUIRE(lateness == cycles_late);
+ 
+     if (reschedules > 0)
+-        CoreTiming::ScheduleEvent(1000, reinterpret_cast<CoreTiming::EventType*>(userdata),
+-                                  userdata);
++        timing.ScheduleEvent(1000, reinterpret_cast<Core::TimingEventType*>(userdata), userdata);
+ }
+ } // namespace ChainSchedulingTest
+ 
+ TEST_CASE("CoreTiming[ChainScheduling]", "[core]") {
+     using namespace ChainSchedulingTest;
+ 
+-    ScopeInit guard;
++    Core::Timing timing;
+ 
+-    CoreTiming::EventType* cb_a = CoreTiming::RegisterEvent("callbackA", CallbackTemplate<0>);
+-    CoreTiming::EventType* cb_b = CoreTiming::RegisterEvent("callbackB", CallbackTemplate<1>);
+-    CoreTiming::EventType* cb_c = CoreTiming::RegisterEvent("callbackC", CallbackTemplate<2>);
+-    CoreTiming::EventType* cb_rs =
+-        CoreTiming::RegisterEvent("callbackReschedule", RescheduleCallback);
++    Core::TimingEventType* cb_a = timing.RegisterEvent("callbackA", CallbackTemplate<0>);
++    Core::TimingEventType* cb_b = timing.RegisterEvent("callbackB", CallbackTemplate<1>);
++    Core::TimingEventType* cb_c = timing.RegisterEvent("callbackC", CallbackTemplate<2>);
++    Core::TimingEventType* cb_rs =
++        timing.RegisterEvent("callbackReschedule", [&timing](u64 userdata, s64 cycles_late) {
++            RescheduleCallback(timing, userdata, cycles_late);
++        });
+ 
+     // Enter slice 0
+-    CoreTiming::Advance();
++    timing.Advance();
+ 
+-    CoreTiming::ScheduleEvent(800, cb_a, CB_IDS[0]);
+-    CoreTiming::ScheduleEvent(1000, cb_b, CB_IDS[1]);
+-    CoreTiming::ScheduleEvent(2200, cb_c, CB_IDS[2]);
+-    CoreTiming::ScheduleEvent(1000, cb_rs, reinterpret_cast<u64>(cb_rs));
+-    REQUIRE(800 == CoreTiming::GetDowncount());
++    timing.ScheduleEvent(800, cb_a, CB_IDS[0]);
++    timing.ScheduleEvent(1000, cb_b, CB_IDS[1]);
++    timing.ScheduleEvent(2200, cb_c, CB_IDS[2]);
++    timing.ScheduleEvent(1000, cb_rs, reinterpret_cast<u64>(cb_rs));
++    REQUIRE(800 == timing.GetDowncount());
+ 
+     reschedules = 3;
+-    AdvanceAndCheck(0, 200);  // cb_a
+-    AdvanceAndCheck(1, 1000); // cb_b, cb_rs
++    AdvanceAndCheck(timing, 0, 200);  // cb_a
++    AdvanceAndCheck(timing, 1, 1000); // cb_b, cb_rs
+     REQUIRE(2 == reschedules);
+ 
+-    CoreTiming::AddTicks(CoreTiming::GetDowncount());
+-    CoreTiming::Advance(); // cb_rs
++    timing.AddTicks(timing.GetDowncount());
++    timing.Advance(); // cb_rs
+     REQUIRE(1 == reschedules);
+-    REQUIRE(200 == CoreTiming::GetDowncount());
++    REQUIRE(200 == timing.GetDowncount());
+ 
+-    AdvanceAndCheck(2, 800); // cb_c
++    AdvanceAndCheck(timing, 2, 800); // cb_c
+ 
+-    CoreTiming::AddTicks(CoreTiming::GetDowncount());
+-    CoreTiming::Advance(); // cb_rs
++    timing.AddTicks(timing.GetDowncount());
++    timing.Advance(); // cb_rs
+     REQUIRE(0 == reschedules);
+-    REQUIRE(MAX_SLICE_LENGTH == CoreTiming::GetDowncount());
++    REQUIRE(MAX_SLICE_LENGTH == timing.GetDowncount());
+ }
+diff --git a/src/tests/core/hle/kernel/hle_ipc.cpp b/src/tests/core/hle/kernel/hle_ipc.cpp
+index 068d767b650..2e404a32d48 100644
+--- a/src/tests/core/hle/kernel/hle_ipc.cpp
++++ b/src/tests/core/hle/kernel/hle_ipc.cpp
+@@ -3,6 +3,7 @@
+ // Refer to the license.txt file included.
+ 
+ #include <catch2/catch.hpp>
++#include "core/core.h"
+ #include "core/core_timing.h"
+ #include "core/hle/ipc.h"
+ #include "core/hle/kernel/client_port.h"
+@@ -20,7 +21,8 @@ static SharedPtr<Object> MakeObject(Kernel::KernelSystem& kernel) {
+ }
+ 
+ TEST_CASE("HLERequestContext::PopulateFromIncomingCommandBuffer", "[core][kernel]") {
+-    CoreTiming::Init();
++    // HACK: see comments of member timing
++    Core::System::GetInstance().timing = std::make_unique<Core::Timing>();
+     Kernel::KernelSystem kernel(0);
+     auto session = std::get<SharedPtr<ServerSession>>(kernel.CreateSessionPair());
+     HLERequestContext context(std::move(session));
+@@ -227,12 +229,11 @@ TEST_CASE("HLERequestContext::PopulateFromIncomingCommandBuffer", "[core][kernel
+         REQUIRE(process->vm_manager.UnmapRange(target_address_mapped, buffer_mapped->size()) ==
+                 RESULT_SUCCESS);
+     }
+-
+-    CoreTiming::Shutdown();
+ }
+ 
+ TEST_CASE("HLERequestContext::WriteToOutgoingCommandBuffer", "[core][kernel]") {
+-    CoreTiming::Init();
++    // HACK: see comments of member timing
++    Core::System::GetInstance().timing = std::make_unique<Core::Timing>();
+     Kernel::KernelSystem kernel(0);
+     auto session = std::get<SharedPtr<ServerSession>>(kernel.CreateSessionPair());
+     HLERequestContext context(std::move(session));
+@@ -369,8 +370,6 @@ TEST_CASE("HLERequestContext::WriteToOutgoingCommandBuffer", "[core][kernel]") {
+         REQUIRE(process->vm_manager.UnmapRange(target_address, output_buffer->size()) ==
+                 RESULT_SUCCESS);
+     }
+-
+-    CoreTiming::Shutdown();
+ }
+ 
+ } // namespace Kernel
+diff --git a/src/tests/core/memory/memory.cpp b/src/tests/core/memory/memory.cpp
+index 150ec8f66be..196cd78eff3 100644
+--- a/src/tests/core/memory/memory.cpp
++++ b/src/tests/core/memory/memory.cpp
+@@ -3,6 +3,7 @@
+ // Refer to the license.txt file included.
+ 
+ #include <catch2/catch.hpp>
++#include "core/core.h"
+ #include "core/core_timing.h"
+ #include "core/hle/kernel/memory.h"
+ #include "core/hle/kernel/process.h"
+@@ -10,7 +11,8 @@
+ #include "core/memory.h"
+ 
+ TEST_CASE("Memory::IsValidVirtualAddress", "[core][memory]") {
+-    CoreTiming::Init();
++    // HACK: see comments of member timing
++    Core::System::GetInstance().timing = std::make_unique<Core::Timing>();
+     Kernel::KernelSystem kernel(0);
+     SECTION("these regions should not be mapped on an empty process") {
+         auto process = kernel.CreateProcess(kernel.CreateCodeSet("", 0));
+@@ -51,6 +53,4 @@ TEST_CASE("Memory::IsValidVirtualAddress", "[core][memory]") {
+         process->vm_manager.UnmapRange(Memory::CONFIG_MEMORY_VADDR, Memory::CONFIG_MEMORY_SIZE);
+         CHECK(Memory::IsValidVirtualAddress(*process, Memory::CONFIG_MEMORY_VADDR) == false);
+     }
+-
+-    CoreTiming::Shutdown();
+ }
+diff --git a/src/video_core/renderer_opengl/renderer_opengl.cpp b/src/video_core/renderer_opengl/renderer_opengl.cpp
+index f83d8d91f08..b3c83ca78b6 100644
+--- a/src/video_core/renderer_opengl/renderer_opengl.cpp
++++ b/src/video_core/renderer_opengl/renderer_opengl.cpp
+@@ -146,7 +146,8 @@ void RendererOpenGL::SwapBuffers() {
+     render_window.PollEvents();
+     render_window.SwapBuffers();
+ 
+-    Core::System::GetInstance().frame_limiter.DoFrameLimiting(CoreTiming::GetGlobalTimeUs());
++    Core::System::GetInstance().frame_limiter.DoFrameLimiting(
++        Core::System::GetInstance().CoreTiming().GetGlobalTimeUs());
+     Core::System::GetInstance().perf_stats.BeginSystemFrame();
+ 
+     prev_state.Apply();

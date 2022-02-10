@@ -1,0 +1,64 @@
+From 246ae84a521fa286b21beca30638f2150f52f5d9 Mon Sep 17 00:00:00 2001
+From: Hamish Milne <hamishmilne83@gmail.com>
+Date: Mon, 20 Jan 2020 21:32:38 +0000
+Subject: [PATCH 16/23] Pretty sure ARM/Thread serialization works now
+
+---
+ src/core/arm/dynarmic/arm_dynarmic.cpp | 14 +++++++++++---
+ src/core/arm/dynarmic/arm_dynarmic.h   |  4 +++-
+ 2 files changed, 14 insertions(+), 4 deletions(-)
+
+diff --git a/src/core/arm/dynarmic/arm_dynarmic.cpp b/src/core/arm/dynarmic/arm_dynarmic.cpp
+index b6494d40e..33bc03a4f 100644
+--- a/src/core/arm/dynarmic/arm_dynarmic.cpp
++++ b/src/core/arm/dynarmic/arm_dynarmic.cpp
+@@ -167,7 +167,7 @@ ARM_Dynarmic::ARM_Dynarmic(Core::System* system, Memory::MemorySystem& memory,
+                            PrivilegeMode initial_mode)
+     : system(*system), memory(memory), cb(std::make_unique<DynarmicUserCallbacks>(*this)) {
+     interpreter_state = std::make_shared<ARMul_State>(system, memory, initial_mode);
+-    PageTableChanged();
++    SetPageTable(memory.GetCurrentPageTable());
+ }
+ 
+ ARM_Dynarmic::~ARM_Dynarmic() = default;
+@@ -281,8 +281,12 @@ void ARM_Dynarmic::InvalidateCacheRange(u32 start_address, std::size_t length) {
+     jit->InvalidateCacheRange(start_address, length);
+ }
+ 
+-void ARM_Dynarmic::PageTableChanged() {
+-    current_page_table = memory.GetCurrentPageTable();
++std::shared_ptr<Memory::PageTable> ARM_Dynarmic::GetPageTable() const {
++    return current_page_table;
++}
++
++void ARM_Dynarmic::SetPageTable(const std::shared_ptr<Memory::PageTable>& page_table) {
++    current_page_table = page_table;
+     Dynarmic::A32::Context ctx{};
+     if (jit) {
+         jit->SaveContext(ctx);
+@@ -309,3 +313,7 @@ std::unique_ptr<Dynarmic::A32::Jit> ARM_Dynarmic::MakeJit() {
+     config.define_unpredictable_behaviour = true;
+     return std::make_unique<Dynarmic::A32::Jit>(config);
+ }
++
++void ARM_Dynarmic::PurgeState() {
++    ClearInstructionCache();
++}
+diff --git a/src/core/arm/dynarmic/arm_dynarmic.h b/src/core/arm/dynarmic/arm_dynarmic.h
+index 690c1aa2e..c4d01835d 100644
+--- a/src/core/arm/dynarmic/arm_dynarmic.h
++++ b/src/core/arm/dynarmic/arm_dynarmic.h
+@@ -51,7 +51,9 @@ public:
+ 
+     void ClearInstructionCache() override;
+     void InvalidateCacheRange(u32 start_address, std::size_t length) override;
+-    void PageTableChanged() override;
++    void SetPageTable(const std::shared_ptr<Memory::PageTable>& page_table) override;
++    std::shared_ptr<Memory::PageTable> GetPageTable() const override;
++    void PurgeState() override;
+ 
+ private:
+     friend class DynarmicUserCallbacks;
+-- 
+2.33.0
+

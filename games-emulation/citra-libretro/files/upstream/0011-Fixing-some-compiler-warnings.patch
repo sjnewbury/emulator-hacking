@@ -1,0 +1,25 @@
+From b065ac69951dbe502e4866fc334af3716aa7aded Mon Sep 17 00:00:00 2001
+From: Jack Harper <jack.harper@stfc.ac.uk>
+Date: Tue, 23 Jul 2019 23:10:17 +0100
+Subject: [PATCH 11/23] Fixing some compiler warnings
+
+---
+ src/core/arm/dynarmic/arm_dynarmic.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/core/arm/dynarmic/arm_dynarmic.h b/src/core/arm/dynarmic/arm_dynarmic.h
+index 02467f879..559dbf5a8 100644
+--- a/src/core/arm/dynarmic/arm_dynarmic.h
++++ b/src/core/arm/dynarmic/arm_dynarmic.h
+@@ -17,7 +17,7 @@ class MemorySystem;
+ } // namespace Memory
+ 
+ namespace Core {
+-struct System;
++class System;
+ }
+ 
+ class DynarmicUserCallbacks;
+-- 
+2.33.0
+

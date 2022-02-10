@@ -105,7 +105,7 @@
    target_sources(discord-rpc PRIVATE
 --- ./dep/CMakeLists.txt.orig	2021-08-04 09:06:43.814660385 +0100
 +++ ./dep/CMakeLists.txt	2021-08-04 09:28:10.645512582 +0100
-@@ -1,26 +1,29 @@
+@@ -1,22 +1,25 @@
 +find_package(PkgConfig REQUIRED)
 +
  add_subdirectory(glad)
@@ -132,16 +132,12 @@
 -add_subdirectory(libsamplerate)
 +pkg_check_modules(SAMPLERATE REQUIRED samplerate)
  
--add_subdirectory(tinyxml2)
-+pkg_check_modules(TINYXML2 REQUIRED tinyxml2)
- add_subdirectory(cubeb)
- add_subdirectory(googletest)
- 
- if(ENABLE_DISCORD_PRESENCE)
-   add_subdirectory(discord-rpc)
+ if(NOT BUILD_LIBRETRO_CORE)
+-  add_subdirectory(tinyxml2)
++  pkg_check_modules(TINYXML2 REQUIRED tinyxml2)
+   add_subdirectory(cubeb)
+   add_subdirectory(googletest)
  endif()
- 
- if(ENABLE_CHEEVOS)
 --- ./src/common/CMakeLists.txt.orig	2021-08-04 09:06:43.834660755 +0100
 +++ ./src/common/CMakeLists.txt	2021-08-04 09:17:01.818336718 +0100
 @@ -1,4 +1,4 @@
@@ -211,3 +207,5 @@
  target_include_directories(stb INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 -target_link_libraries(stb zlib Threads::Threads "${CMAKE_DL_LIBS}")
 +target_link_libraries(stb ${ZLIB_LIBRARIES} Threads::Threads "${CMAKE_DL_LIBS}")
+--- ./dep/CMakeLists.txt~	2022-01-06 12:45:58.000000000 +0000
++++ ./dep/CMakeLists.txt	2022-01-06 12:49:21.355121045 +0000

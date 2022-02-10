@@ -1,0 +1,549 @@
+From a59d2bc83883f92e306e78c22d2be2b6f6745442 Mon Sep 17 00:00:00 2001
+From: Steven Newbury <steve@snewbury.org.uk>
+Date: Thu, 16 Sep 2021 15:26:18 +0100
+Subject: [PATCH] Unbundle libraries
+
+---
+ CMakeLists.txt                                | 84 ++++++++++++++++++-
+ externals/CMakeLists.txt                      | 49 +++++------
+ externals/cmake-modules/FindENet.cmake        | 43 ++++++++++
+ externals/cmake-modules/FindLibCrypto++.cmake | 43 ++++++++++
+ externals/cmake-modules/FindLibSSL.cmake      | 56 +++++++++++++
+ externals/cmake-modules/FindSoundTouch.cmake  | 43 ++++++++++
+ externals/cmake-modules/FindZstd.cmake        | 43 ++++++++++
+ src/common/CMakeLists.txt                     |  6 +-
+ src/core/CMakeLists.txt                       |  8 +-
+ src/web_service/CMakeLists.txt                |  8 +-
+ 10 files changed, 348 insertions(+), 35 deletions(-)
+ create mode 100644 externals/cmake-modules/FindENet.cmake
+ create mode 100644 externals/cmake-modules/FindLibCrypto++.cmake
+ create mode 100644 externals/cmake-modules/FindLibSSL.cmake
+ create mode 100644 externals/cmake-modules/FindSoundTouch.cmake
+ create mode 100644 externals/cmake-modules/FindZstd.cmake
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 729c6ba4d..f9c0cad95 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -24,6 +24,11 @@ option(ENABLE_LIBRETRO "Enable the LibRetro frontend" OFF)
+ 
+ option(ENABLE_WEB_SERVICE "Enable web services (telemetry, etc.)" ON)
+ 
++if (ENABLE_WEB_SERVICE)
++    option(USE_SYSTEM_SSL "Use the system SSL libs (instead of the bundled libressl)" OFF)
++endif()
++
++
+ option(ENABLE_CUBEB "Enables the cubeb audio backend" OFF)
+ 
+ option(ENABLE_FFMPEG_AUDIO_DECODER "Enable FFmpeg audio (AAC) decoder" OFF)
+@@ -42,6 +47,12 @@ CMAKE_DEPENDENT_OPTION(ENABLE_MF "Use Media Foundation decoder (preferred over F
+ CMAKE_DEPENDENT_OPTION(COMPILE_WITH_DWARF "Add DWARF debugging information" ON "MINGW" OFF)
+ 
+ option(USE_SYSTEM_BOOST "Use the system Boost libs (instead of the bundled ones)" OFF)
++option(USE_SYSTEM_FMT "Use the system libfmt (instead of the bundled one)" OFF)
++option(USE_SYSTEM_XBYAK "Use the system xbyak (instead of the bundled one)" OFF)
++option(USE_SYSTEM_CRYPTOPP "Use the system crypto++ (instead of the bundled one)" OFF)
++option(USE_SYSTEM_SOUNDTOUCH "Use the system SoundTouch (instead of the bundled one)" OFF)
++option(USE_SYSTEM_ZSTD "Use the system Zstandard (instead of the bundled one)" OFF)
++option(USE_SYSTEM_ENET "Use the system libenet (instead of the bundled one)" OFF)
+ 
+ CMAKE_DEPENDENT_OPTION(ENABLE_FDK "Use FDK AAC decoder" OFF "NOT ENABLE_FFMPEG_AUDIO_DECODER;NOT ENABLE_MF" OFF)
+ 
+@@ -65,7 +76,7 @@ function(check_submodules_present)
+         endif()
+     endforeach()
+ endfunction()
+-check_submodules_present()
++#check_submodules_present()
+ 
+ configure_file(${PROJECT_SOURCE_DIR}/dist/compatibility_list/compatibility_list.qrc
+                ${PROJECT_BINARY_DIR}/dist/compatibility_list/compatibility_list.qrc
+@@ -430,6 +441,77 @@ if (NOT USE_SYSTEM_BOOST)
+ endif()
+ 
+ enable_testing()
++
++if (USE_SYSTEM_FMT AND NOT TARGET fmt)
++    find_package(fmt REQUIRED)
++    add_library(fmt ALIAS fmt::fmt)
++endif()
++
++if (USE_SYSTEM_SSL AND NOT TARGET libressl)
++    include(FindPkgConfig)
++    find_package(LibSSL)
++endif()
++
++# Crypto++
++if (USE_SYSTEM_CRYPTOPP AND NOT TARGET cryptopp)
++    include(FindPkgConfig)
++    find_package(LibCrypto++)
++endif()
++if (LIBCRYPTOPP_FOUND)
++    add_library(cryptopp SHARED IMPORTED)
++    set_property(TARGET cryptopp PROPERTY
++             IMPORTED_LOCATION "${LIBCRYPTOPP_LIBRARIES}")
++    target_include_directories(cryptopp SYSTEM INTERFACE ${LIBCRYPTOPP_INCLUDE_DIR})
++else()
++    add_subdirectory(external/cryptopp)
++endif()
++
++# Zstandard
++if (USE_SYSTEM_ZSTD AND NOT TARGET libzstd)
++    include(FindPkgConfig)
++    find_package(Zstd)
++endif()
++if (ZSTD_FOUND)
++    add_library(libzstd SHARED IMPORTED)
++    set_property(TARGET libzstd PROPERTY
++             IMPORTED_LOCATION "${ZSTD_LIBRARIES}")
++    target_include_directories(libzstd SYSTEM INTERFACE ${ZSTD_INCLUDE_DIR})
++else()
++    add_subdirectory(externals/zstd/build/cmake EXCLUDE_FROM_ALL)
++    target_include_directories(libzstd_static INTERFACE $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/externals/zstd/lib>)
++endif()
++
++# SoundTouch
++if (USE_SYSTEM_SOUNDTOUCH AND NOT TARGET SoundTouch)
++    include(FindPkgConfig)
++    find_package(SoundTouch)
++endif()
++if (SOUNDTOUCH_FOUND)
++    add_library(SoundTouch SHARED IMPORTED)
++    set_property(TARGET SoundTouch PROPERTY
++             IMPORTED_LOCATION "${SOUNDTOUCH_LIBRARIES}")
++    target_include_directories(SoundTouch SYSTEM INTERFACE ${SOUNDTOUCH_INCLUDE_DIR})
++else()
++    add_subdirectory(externals/soundtouch)
++    # The SoundTouch target doesn't export the necessary include paths as properties by default
++    target_include_directories(SoundTouch INTERFACE ./soundtouch/include)
++endif()
++
++# ENet
++if (USE_SYSTEM_ENET AND NOT TARGET enet)
++    include(FindPkgConfig)
++    find_package(ENet)
++endif()
++if (ENET_FOUND)
++    add_library(enet SHARED IMPORTED)
++    set_property(TARGET enet PROPERTY
++             IMPORTED_LOCATION "${ENET_LIBRARIES}")
++    target_include_directories(enet SYSTEM INTERFACE ${ENET_INCLUDE_DIR})
++else()
++    add_subdirectory(externals/enet)
++    target_include_directories(enet INTERFACE ./enet/include)
++endif()
++
+ add_subdirectory(externals)
+ 
+ # Boost
+diff --git a/externals/CMakeLists.txt b/externals/CMakeLists.txt
+index fdd09006c..6b040c168 100644
+--- a/externals/CMakeLists.txt
++++ b/externals/CMakeLists.txt
+@@ -17,9 +17,11 @@ add_library(boost INTERFACE)
+ target_include_directories(boost SYSTEM INTERFACE ${Boost_INCLUDE_DIR})
+ 
+ # Boost::serialization
+-file(GLOB boost_serialization_SRC "${CMAKE_SOURCE_DIR}/externals/boost/libs/serialization/src/*.cpp")
+-add_library(boost_serialization STATIC ${boost_serialization_SRC})
+-target_link_libraries(boost_serialization PUBLIC boost)
++if (NOT USE_SYSTEM_BOOST)
++    file(GLOB boost_serialization_SRC "${CMAKE_SOURCE_DIR}/externals/boost/libs/serialization/src/*.cpp")
++    add_library(boost_serialization STATIC ${boost_serialization_SRC})
++    target_link_libraries(boost_serialization PUBLIC boost)
++endif()
+ 
+ # Add additional boost libs here; remember to ALIAS them in the root CMakeLists!
+ 
+@@ -27,13 +29,14 @@ target_link_libraries(boost_serialization PUBLIC boost)
+ add_library(catch-single-include INTERFACE)
+ target_include_directories(catch-single-include INTERFACE catch/single_include)
+ 
+-# Crypto++
+-add_subdirectory(cryptopp)
+-
+ # Xbyak
+ if (ARCHITECTURE_x86_64)
+     add_library(xbyak INTERFACE)
+-    target_include_directories(xbyak SYSTEM INTERFACE ./xbyak/xbyak)
++    if (USE_SYSTEM_XBYAK)
++        target_include_directories(xbyak SYSTEM INTERFACE /usr/include/xbyak)
++    else()
++        target_include_directories(xbyak INTERFACE ./xbyak/xbyak)
++    endif()
+     target_compile_definitions(xbyak INTERFACE XBYAK_NO_OP_NAMES)
+ endif()
+ 
+@@ -46,8 +49,12 @@ if (ARCHITECTURE_x86_64 OR ARCHITECTURE_ARM64)
+ endif()
+ 
+ # libfmt
+-add_subdirectory(fmt)
+-add_library(fmt::fmt ALIAS fmt)
++if (NOT USE_SYSTEM_FMT)
++    add_subdirectory(fmt)
++    add_library(fmt::fmt ALIAS fmt)
++else()
++    set(DYNARMIC_NO_BUNDLED_FMT ON)
++endif()
+ 
+ # getopt
+ if (MSVC)
+@@ -71,22 +78,9 @@ target_include_directories(nihstro-headers INTERFACE ./nihstro/include)
+ # Open Source Archives
+ add_subdirectory(open_source_archives)
+ 
+-# SoundTouch
+-add_subdirectory(soundtouch)
+-# The SoundTouch target doesn't export the necessary include paths as properties by default
+-target_include_directories(SoundTouch INTERFACE ./soundtouch/include)
+-
+ # Teakra
+ add_subdirectory(teakra EXCLUDE_FROM_ALL)
+ 
+-# Zstandard
+-add_subdirectory(zstd/build/cmake EXCLUDE_FROM_ALL)
+-target_include_directories(libzstd_static INTERFACE $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/externals/zstd/lib>)
+-
+-# ENet
+-add_subdirectory(enet)
+-target_include_directories(enet INTERFACE ./enet/include)
+-
+ # Cubeb
+ if (ENABLE_CUBEB)
+     set(BUILD_TESTS OFF CACHE BOOL "")
+@@ -105,11 +99,12 @@ target_include_directories(libretro INTERFACE ./libretro)
+ 
+ if (ENABLE_WEB_SERVICE)
+     # LibreSSL
+-    set(LIBRESSL_SKIP_INSTALL ON CACHE BOOL "")
+-    add_subdirectory(libressl EXCLUDE_FROM_ALL)
+-    target_include_directories(ssl INTERFACE ./libressl/include)
+-    target_compile_definitions(ssl PRIVATE -DHAVE_INET_NTOP)
+-
++    if (NOT USE_SYSTEM_SSL)
++        set(LIBRESSL_SKIP_INSTALL ON CACHE BOOL "")
++        add_subdirectory(libressl EXCLUDE_FROM_ALL)
++        target_include_directories(ssl INTERFACE ./libressl/include)
++        target_compile_definitions(ssl PRIVATE -DHAVE_INET_NTOP)
++    endif()
+     # JSON
+     add_library(json-headers INTERFACE)
+     target_include_directories(json-headers INTERFACE ./json)
+diff --git a/externals/cmake-modules/FindENet.cmake b/externals/cmake-modules/FindENet.cmake
+new file mode 100644
+index 000000000..ff191bcf4
+--- /dev/null
++++ b/externals/cmake-modules/FindENet.cmake
+@@ -0,0 +1,43 @@
++# - Find ENet library
++# This module defines
++#  ENET_INCLUDE_DIR, where to find headers.
++#  ENET_LIBRARIES, the libraries needed to use ENet.
++#  ENET_FOUND, If false, do not try to use ENet.
++#
++# Copyright (c) 2009, Michal Cihar, <michal@cihar.com>
++#
++# vim: expandtab sw=4 ts=4 sts=4:
++
++if(ANDROID)
++       set(ENET_FOUND FALSE CACHE INTERNAL "ENet found")
++       message(STATUS "ENet not found.")
++elseif (NOT ENET_FOUND)
++    pkg_check_modules (ENET_PKG libenet)
++
++    find_path(ENET_INCLUDE_DIR NAMES enet.h
++       PATHS
++       ${ENET_PKG_INCLUDE_DIRS}
++       /usr/include/enet
++       /usr/include
++       /usr/local/include/enet
++       /usr/local/include
++    )
++
++    find_library(ENET_LIBRARIES NAMES libenet enet
++       PATHS
++       ${ENET_PKG_LIBRARY_DIRS}
++       /usr/lib
++       /usr/local/lib
++    )
++
++    if(ENET_INCLUDE_DIR AND ENET_LIBRARIES)
++       set(ENET_FOUND TRUE CACHE INTERNAL "ENet found")
++       message(STATUS "Found ENet: ${ENET_INCLUDE_DIR}, ${ENET_LIBRARIES}")
++    else(ENET_INCLUDE_DIR AND ENET_LIBRARIES)
++       set(ENET_FOUND FALSE CACHE INTERNAL "ENet found")
++       message(STATUS "ENet not found.")
++    endif(ENET_INCLUDE_DIR AND ENET_LIBRARIES)
++
++    mark_as_advanced(ENET_INCLUDE_DIR ENET_LIBRARIES)
++endif ()
++
+diff --git a/externals/cmake-modules/FindLibCrypto++.cmake b/externals/cmake-modules/FindLibCrypto++.cmake
+new file mode 100644
+index 000000000..024209952
+--- /dev/null
++++ b/externals/cmake-modules/FindLibCrypto++.cmake
+@@ -0,0 +1,43 @@
++# - Find Crypto++ library
++# This module defines
++#  LIBCRYPTOPP_INCLUDE_DIR, where to find headers.
++#  LIBCRYPTOPP_LIBRARIES, the libraries needed to use cryptopp.
++#  LIBCRYPTOPP_FOUND, If false, do not try to use cryptopp.
++#
++# Copyright (c) 2009, Michal Cihar, <michal@cihar.com>
++#
++# vim: expandtab sw=4 ts=4 sts=4:
++
++if(ANDROID)
++       set(LIBCRYPTOPP_FOUND FALSE CACHE INTERNAL "Crypto++ found")
++       message(STATUS "Crypto++ not found.")
++elseif (NOT LIBCRYPTOPP_FOUND)
++    pkg_check_modules (LIBCRYPTOPP_PKG libcryptopp)
++
++    find_path(LIBCRYPTOPP_INCLUDE_DIR NAMES crc.h
++       PATHS
++       ${LIBCRYPTOPP_PKG_INCLUDE_DIRS}
++       /usr/include/cryptopp
++       /usr/include
++       /usr/local/include/cryptopp
++       /usr/local/include
++    )
++
++    find_library(LIBCRYPTOPP_LIBRARIES NAMES libcryptopp cryptopp
++       PATHS
++       ${LIBCRYPTOPP_PKG_LIBRARY_DIRS}
++       /usr/lib
++       /usr/local/lib
++    )
++
++    if(LIBCRYPTOPP_INCLUDE_DIR AND LIBCRYPTOPP_LIBRARIES)
++       set(LIBCRYPTOPP_FOUND TRUE CACHE INTERNAL "Crypto++ found")
++       message(STATUS "Found libcryptopp: ${LIBCRYPTOPP_INCLUDE_DIR}, ${LIBCRYPTOPP_LIBRARIES}")
++    else(LIBCRYPTOPP_INCLUDE_DIR AND LIBCRYPTOPP_LIBRARIES)
++       set(LIBCRYPTOPP_FOUND FALSE CACHE INTERNAL "Crypto++ found")
++       message(STATUS "Crypto++ not found.")
++    endif(LIBCRYPTOPP_INCLUDE_DIR AND LIBCRYPTOPP_LIBRARIES)
++
++    mark_as_advanced(LIBCRYPTOPP_INCLUDE_DIR LIBCRYPTOPP_LIBRARIES)
++endif ()
++
+diff --git a/externals/cmake-modules/FindLibSSL.cmake b/externals/cmake-modules/FindLibSSL.cmake
+new file mode 100644
+index 000000000..7fe548a38
+--- /dev/null
++++ b/externals/cmake-modules/FindLibSSL.cmake
+@@ -0,0 +1,56 @@
++# - Find libssl library
++# This module defines
++#  OPENSSL_INCLUDE_DIR, where to find ssl.h
++#  OPENSSL_LIBS, the libraries needed to use libssl.
++#  OPENSSL_FOUND, If false, do not try to use libssl.
++#
++# Copyright (c) 2009, Michal Cihar, <michal@cihar.com>
++#
++# vim: expandtab sw=4 ts=4 sts=4:
++
++if(ANDROID)
++       set(OPENSSL_FOUND FALSE CACHE INTERNAL "libssl found")
++       message(STATUS "libssl not found.")
++elseif (NOT OPENSSL_FOUND)
++    pkg_check_modules (OPENSSL_PKG openssl)
++
++    find_path(OPENSSL_INCLUDE_DIR NAMES ssl.h crypto.h
++       PATHS
++       ${OPENSSL_PKG_INCLUDE_DIRS}
++       /usr/include/openssl
++       /usr/include/libressl
++       /usr/include/ssl
++       /usr/include
++       /usr/local/include/openssl
++       /usr/local/include/libressl
++       /usr/local/include/ssl
++       /usr/local/include
++    )
++
++    find_library(OPENSSL_SSL_LIBRARIES NAMES ssl
++       PATHS
++       ${OPENSSL_PKG_LIBRARY_DIRS}
++       /usr/lib
++       /usr/local/lib
++    )
++
++    find_library(OPENSSL_CRYPTO_LIBRARIES NAMES crypto
++       PATHS
++       ${OPENSSL_PKG_LIBRARY_DIRS}
++       /usr/lib
++       /usr/local/lib
++    )
++
++    list(APPEND OPENSSL_LIBS ${OPENSSL_SSL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARIES})
++
++    if(OPENSSL_INCLUDE_DIR AND OPENSSL_LIBS)
++       set(OPENSSL_FOUND TRUE CACHE INTERNAL "libssl found")
++       message(STATUS "Found libssl: ${OPENSSL_INCLUDE_DIR}, ${OPENSSL_LIBS}")
++    else(OPENSSL_INCLUDE_DIR AND OPENSSL_LIBS)
++       set(OPENSSL_FOUND FALSE CACHE INTERNAL "libssl found")
++       message(STATUS "libssl not found.")
++    endif(OPENSSL_INCLUDE_DIR AND OPENSSL_LIBS)
++
++    mark_as_advanced(OPENSSL_INCLUDE_DIR OPENSSL_LIBS)
++endif ()
++
+diff --git a/externals/cmake-modules/FindSoundTouch.cmake b/externals/cmake-modules/FindSoundTouch.cmake
+new file mode 100644
+index 000000000..a95887c1e
+--- /dev/null
++++ b/externals/cmake-modules/FindSoundTouch.cmake
+@@ -0,0 +1,43 @@
++# - Find SoundTouch library
++# This module defines
++#  SOUNDTOUCH_INCLUDE_DIR, where to find headers.
++#  SOUNDTOUCH_LIBRARIES, the libraries needed to use SoundTouch.
++#  SOUNDTOUCH_FOUND, If false, do not try to use SoundTouch.
++#
++# Copyright (c) 2009, Michal Cihar, <michal@cihar.com>
++#
++# vim: expandtab sw=4 ts=4 sts=4:
++
++if(ANDROID)
++       set(SOUNDTOUCH_FOUND FALSE CACHE INTERNAL "SoundTouch found")
++       message(STATUS "SoundTouch not found.")
++elseif (NOT SOUNDTOUCH_FOUND)
++    pkg_check_modules (SOUNDTOUCH_PKG soundtouch)
++
++    find_path(SOUNDTOUCH_INCLUDE_DIR NAMES SoundTouch.h
++       PATHS
++       ${SOUNDTOUCH_PKG_INCLUDE_DIRS}
++       /usr/include/soundtouch
++       /usr/include
++       /usr/local/include/soundtouch
++       /usr/local/include
++    )
++
++    find_library(SOUNDTOUCH_LIBRARIES NAMES libSoundTouch SoundTouch
++       PATHS
++       ${SOUNDTOUCH_PKG_LIBRARY_DIRS}
++       /usr/lib
++       /usr/local/lib
++    )
++
++    if(SOUNDTOUCH_INCLUDE_DIR AND SOUNDTOUCH_LIBRARIES)
++       set(SOUNDTOUCH_FOUND TRUE CACHE INTERNAL "SoundTouch found")
++       message(STATUS "Found SoundTouch: ${SOUNDTOUCH_INCLUDE_DIR}, ${SOUNDTOUCH_LIBRARIES}")
++    else(SOUNDTOUCH_INCLUDE_DIR AND SOUNDTOUCH_LIBRARIES)
++       set(SOUNDTOUCH_FOUND FALSE CACHE INTERNAL "SoundTouch found")
++       message(STATUS "SoundTouch not found.")
++    endif(SOUNDTOUCH_INCLUDE_DIR AND SOUNDTOUCH_LIBRARIES)
++
++    mark_as_advanced(SOUNDTOUCH_INCLUDE_DIR SOUNDTOUCH_LIBRARIES)
++endif ()
++
+diff --git a/externals/cmake-modules/FindZstd.cmake b/externals/cmake-modules/FindZstd.cmake
+new file mode 100644
+index 000000000..9122521df
+--- /dev/null
++++ b/externals/cmake-modules/FindZstd.cmake
+@@ -0,0 +1,43 @@
++# - Find Zstd library
++# This module defines
++#  ZSTD_INCLUDE_DIR, where to find headers.
++#  ZSTD_LIBRARIES, the libraries needed to use cryptopp.
++#  ZSTD_FOUND, If false, do not try to use libzstd.
++#
++# Copyright (c) 2009, Michal Cihar, <michal@cihar.com>
++#
++# vim: expandtab sw=4 ts=4 sts=4:
++
++if(ANDROID)
++       set(ZSTD_FOUND FALSE CACHE INTERNAL "Zstd found")
++       message(STATUS "Zstd not found.")
++elseif (NOT ZSTD_FOUND)
++    pkg_check_modules (ZSTD_PKG libzstd)
++
++    find_path(ZSTD_INCLUDE_DIR NAMES zstd.h
++       PATHS
++       ${ZSTD_PKG_INCLUDE_DIRS}
++       /usr/include/cryptopp
++       /usr/include
++       /usr/local/include/cryptopp
++       /usr/local/include
++    )
++
++    find_library(ZSTD_LIBRARIES NAMES libzstd zstd
++       PATHS
++       ${ZSTD_PKG_LIBRARY_DIRS}
++       /usr/lib
++       /usr/local/lib
++    )
++
++    if(ZSTD_INCLUDE_DIR AND ZSTD_LIBRARIES)
++       set(ZSTD_FOUND TRUE CACHE INTERNAL "Zstd found")
++       message(STATUS "Found libzstd: ${ZSTD_INCLUDE_DIR}, ${ZSTD_LIBRARIES}")
++    else(ZSTD_INCLUDE_DIR AND ZSTD_LIBRARIES)
++       set(ZSTD_FOUND FALSE CACHE INTERNAL "Zstd found")
++       message(STATUS "Zstd not found.")
++    endif(ZSTD_INCLUDE_DIR AND ZSTD_LIBRARIES)
++
++    mark_as_advanced(ZSTD_INCLUDE_DIR ZSTD_LIBRARIES)
++endif ()
++
+diff --git a/src/common/CMakeLists.txt b/src/common/CMakeLists.txt
+index 5d65965fa..94ee049da 100644
+--- a/src/common/CMakeLists.txt
++++ b/src/common/CMakeLists.txt
+@@ -130,7 +130,11 @@ endif()
+ create_target_directory_groups(common)
+ 
+ target_link_libraries(common PUBLIC fmt microprofile Boost::boost Boost::serialization)
+-target_link_libraries(common PRIVATE libzstd_static)
++if (NOT USE_SYSTEM_ZSTD)
++    target_link_libraries(common PRIVATE libzstd_static)
++else()
++    target_link_libraries(common PUBLIC libzstd)
++endif()
+ if (ARCHITECTURE_x86_64)
+     target_link_libraries(common PRIVATE xbyak)
+ endif()
+diff --git a/src/core/CMakeLists.txt b/src/core/CMakeLists.txt
+index 5378d2f68..076983869 100644
+--- a/src/core/CMakeLists.txt
++++ b/src/core/CMakeLists.txt
+@@ -474,9 +474,11 @@ target_link_libraries(core PUBLIC common PRIVATE audio_core network video_core)
+ target_link_libraries(core PUBLIC Boost::boost PRIVATE cryptopp fmt open_source_archives Boost::serialization)
+ 
+ if (ENABLE_WEB_SERVICE)
+-    get_directory_property(OPENSSL_LIBS
+-        DIRECTORY ${PROJECT_SOURCE_DIR}/externals/libressl
+-        DEFINITION OPENSSL_LIBS)
++    if (NOT USE_SYSTEM_SSL)
++        get_directory_property(OPENSSL_LIBS
++            DIRECTORY ${PROJECT_SOURCE_DIR}/externals/libressl
++            DEFINITION OPENSSL_LIBS)
++    endif()
+ 
+     target_compile_definitions(core PRIVATE -DENABLE_WEB_SERVICE -DCPPHTTPLIB_OPENSSL_SUPPORT)
+     target_link_libraries(core PRIVATE web_service ${OPENSSL_LIBS} httplib lurlparser)
+diff --git a/src/web_service/CMakeLists.txt b/src/web_service/CMakeLists.txt
+index 5695e25f0..897f4b509 100644
+--- a/src/web_service/CMakeLists.txt
++++ b/src/web_service/CMakeLists.txt
+@@ -13,9 +13,11 @@ add_library(web_service STATIC
+ 
+ create_target_directory_groups(web_service)
+ 
+-get_directory_property(OPENSSL_LIBS
+-        DIRECTORY ${PROJECT_SOURCE_DIR}/externals/libressl
+-        DEFINITION OPENSSL_LIBS)
++if (NOT USE_SYSTEM_SSL)
++    get_directory_property(OPENSSL_LIBS
++            DIRECTORY ${PROJECT_SOURCE_DIR}/externals/libressl
++            DEFINITION OPENSSL_LIBS)
++endif()
+ target_compile_definitions(web_service PRIVATE -DCPPHTTPLIB_OPENSSL_SUPPORT)
+ target_link_libraries(web_service PRIVATE common network json-headers ${OPENSSL_LIBS} httplib lurlparser cpp-jwt)
+ if (ANDROID)
+-- 
+2.33.0
+

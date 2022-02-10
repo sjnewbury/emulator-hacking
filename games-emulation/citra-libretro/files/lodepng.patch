@@ -1,0 +1,21 @@
+diff --git a/src/citra_libretro/CMakeLists.txt b/src/citra_libretro/CMakeLists.txt
+index 62c329eca..805214ade 100644
+--- a/src/citra_libretro/CMakeLists.txt
++++ b/src/citra_libretro/CMakeLists.txt
+@@ -14,12 +14,14 @@ add_library(citra_libretro SHARED
+         core_settings.cpp
+         core_settings.h
+         libretro_logger.cpp
+-        libretro_logger.h)
++        libretro_logger.h
++        ../citra/lodepng_image_interface.cpp
++        ../citra/lodepng_image_interface.h)
+ 
+ create_target_directory_groups(citra_libretro)
+ 
+ target_link_libraries(citra_libretro PRIVATE common core)
+-target_link_libraries(citra_libretro PRIVATE glad libretro)
++target_link_libraries(citra_libretro PRIVATE glad lodepng libretro)
+ target_link_libraries(citra_libretro PRIVATE ${PLATFORM_LIBRARIES} Threads::Threads)
+ if(DEFINED LIBRETRO_STATIC)
+ target_link_libraries(citra_libretro PRIVATE -static-libstdc++)

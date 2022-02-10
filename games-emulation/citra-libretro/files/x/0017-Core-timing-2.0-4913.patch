@@ -1,0 +1,96 @@
+From 55ec7031ccb2943c2c507620cf4613a86d160670 Mon Sep 17 00:00:00 2001
+From: Ben <benediktthomas@gmail.com>
+Date: Fri, 21 Feb 2020 19:31:32 +0100
+Subject: [PATCH 17/23] Core timing 2.0 (#4913)
+
+* Core::Timing: Add multiple timer, one for each core
+
+* revert clang-format; work on tests for CoreTiming
+
+* Kernel:: Add support for multiple cores, asserts in HandleSyncRequest because Thread->status == WaitIPC
+
+* Add some TRACE_LOGs
+
+* fix tests
+
+* make some adjustments to qt-debugger, cheats and gdbstub(probably still broken)
+
+* Make ARM_Interface::id private, rework ARM_Interface ctor
+
+* ReRename TimingManager to Timing for smaler diff
+
+* addressed review comments
+---
+ src/core/arm/dynarmic/arm_dynarmic.cpp | 16 ++++++++--------
+ src/core/arm/dynarmic/arm_dynarmic.h   |  3 ++-
+ 2 files changed, 10 insertions(+), 9 deletions(-)
+
+diff --git a/src/core/arm/dynarmic/arm_dynarmic.cpp b/src/core/arm/dynarmic/arm_dynarmic.cpp
+index f494b5228..b39a4a24e 100644
+--- a/src/core/arm/dynarmic/arm_dynarmic.cpp
++++ b/src/core/arm/dynarmic/arm_dynarmic.cpp
+@@ -72,8 +72,7 @@ private:
+ class DynarmicUserCallbacks final : public Dynarmic::A32::UserCallbacks {
+ public:
+     explicit DynarmicUserCallbacks(ARM_Dynarmic& parent)
+-        : parent(parent), timing(parent.system.CoreTiming()), svc_context(parent.system),
+-          memory(parent.memory) {}
++        : parent(parent), svc_context(parent.system), memory(parent.memory) {}
+     ~DynarmicUserCallbacks() = default;
+ 
+     std::uint8_t MemoryRead8(VAddr vaddr) override {
+@@ -137,7 +136,7 @@ public:
+                 parent.jit->HaltExecution();
+                 parent.SetPC(pc);
+                 Kernel::Thread* thread =
+-                    parent.system.Kernel().GetThreadManager().GetCurrentThread();
++                    parent.system.Kernel().GetCurrentThreadManager().GetCurrentThread();
+                 parent.SaveContext(thread->context);
+                 GDBStub::Break();
+                 GDBStub::SendTrap(thread, 5);
+@@ -150,22 +149,23 @@ public:
+     }
+ 
+     void AddTicks(std::uint64_t ticks) override {
+-        timing.AddTicks(ticks);
++        parent.GetTimer()->AddTicks(ticks);
+     }
+     std::uint64_t GetTicksRemaining() override {
+-        s64 ticks = timing.GetDowncount();
++        s64 ticks = parent.GetTimer()->GetDowncount();
+         return static_cast<u64>(ticks <= 0 ? 0 : ticks);
+     }
+ 
+     ARM_Dynarmic& parent;
+-    Core::Timing& timing;
+     Kernel::SVCContext svc_context;
+     Memory::MemorySystem& memory;
+ };
+ 
+ ARM_Dynarmic::ARM_Dynarmic(Core::System* system, Memory::MemorySystem& memory,
+-                           PrivilegeMode initial_mode)
+-    : system(*system), memory(memory), cb(std::make_unique<DynarmicUserCallbacks>(*this)) {
++                           PrivilegeMode initial_mode, u32 id,
++                           std::shared_ptr<Core::Timing::Timer> timer)
++    : ARM_Interface(id, timer), system(*system), memory(memory),
++      cb(std::make_unique<DynarmicUserCallbacks>(*this)) {
+     interpreter_state = std::make_shared<ARMul_State>(system, memory, initial_mode);
+     PageTableChanged();
+ }
+diff --git a/src/core/arm/dynarmic/arm_dynarmic.h b/src/core/arm/dynarmic/arm_dynarmic.h
+index 559dbf5a8..4aaec1bf1 100644
+--- a/src/core/arm/dynarmic/arm_dynarmic.h
++++ b/src/core/arm/dynarmic/arm_dynarmic.h
+@@ -24,7 +24,8 @@ class DynarmicUserCallbacks;
+ 
+ class ARM_Dynarmic final : public ARM_Interface {
+ public:
+-    ARM_Dynarmic(Core::System* system, Memory::MemorySystem& memory, PrivilegeMode initial_mode);
++    ARM_Dynarmic(Core::System* system, Memory::MemorySystem& memory, PrivilegeMode initial_mode,
++                 u32 id, std::shared_ptr<Core::Timing::Timer> timer);
+     ~ARM_Dynarmic() override;
+ 
+     void Run() override;
+-- 
+2.33.0
+

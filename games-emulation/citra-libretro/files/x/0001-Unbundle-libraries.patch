@@ -1,0 +1,403 @@
+From 793b95a1e8416f4f6ae3473df509d19ce6171f0a Mon Sep 17 00:00:00 2001
+From: Steven Newbury <steve@snewbury.org.uk>
+Date: Wed, 15 Sep 2021 17:59:01 +0100
+Subject: [PATCH] Unbundle libraries
+
+---
+ CMakeLists.txt                                | 29 ++++++++++++-
+ externals/CMakeLists.txt                      | 37 ++++++++++------
+ externals/cmake-modules/FindLibCrypto++.cmake | 43 +++++++++++++++++++
+ externals/cmake-modules/FindLibSSL.cmake         | 43 +++++++++++++++++++
+ 4 files changed, 139 insertions(+), 13 deletions(-)
+ create mode 100644 externals/cmake-modules/FindLibCrypto++.cmake
+ create mode 100644 externals/cmake-modules/FindLibSSL.cmake
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 729c6ba4d..659d63037 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -24,6 +24,11 @@ option(ENABLE_LIBRETRO "Enable the LibRetro frontend" OFF)
+ 
+ option(ENABLE_WEB_SERVICE "Enable web services (telemetry, etc.)" ON)
+ 
++if (ENABLE_WEB_SERVICE)
++    option(USE_SYSTEM_SSL "Use the system SSL libs (instead of the bundled libressl)" OFF)
++endif()
++
++
+ option(ENABLE_CUBEB "Enables the cubeb audio backend" OFF)
+ 
+ option(ENABLE_FFMPEG_AUDIO_DECODER "Enable FFmpeg audio (AAC) decoder" OFF)
+@@ -43,6 +48,12 @@ CMAKE_DEPENDENT_OPTION(COMPILE_WITH_DWARF "Add DWARF debugging information" ON "
+ 
+ option(USE_SYSTEM_BOOST "Use the system Boost libs (instead of the bundled ones)" OFF)
+ 
++option(USE_SYSTEM_FMT "Use the system libfmt (instead of the bundled ones)" OFF)
++
++option(USE_SYSTEM_XBYAK "Use the system xbyak (instead of the bundled ones)" OFF)
++
++option(USE_SYSTEM_CRYPTOPP "Use the system crypto++ (instead of the bundled ones)" OFF)
++
+ CMAKE_DEPENDENT_OPTION(ENABLE_FDK "Use FDK AAC decoder" OFF "NOT ENABLE_FFMPEG_AUDIO_DECODER;NOT ENABLE_MF" OFF)
+ 
+ if(NOT EXISTS ${PROJECT_SOURCE_DIR}/.git/hooks/pre-commit)
+@@ -65,7 +76,7 @@ function(check_submodules_present)
+         endif()
+     endforeach()
+ endfunction()
+-check_submodules_present()
++#check_submodules_present()
+ 
+ configure_file(${PROJECT_SOURCE_DIR}/dist/compatibility_list/compatibility_list.qrc
+                ${PROJECT_BINARY_DIR}/dist/compatibility_list/compatibility_list.qrc
+@@ -430,6 +441,27 @@ if (NOT USE_SYSTEM_BOOST)
+ endif()
+ 
+ enable_testing()
++
++if (USE_SYSTEM_FMT AND NOT TARGET fmt)
++    find_package(fmt REQUIRED)
++    add_library(fmt ALIAS fmt::fmt)
++endif()
++
++if (USE_SYSTEM_SSL AND NOT TARGET libressl)
++    include(FindPkgConfig)
++    find_package(LibSSL)
++endif()
++
++if (USE_SYSTEM_CRYPTOPP AND NOT TARGET cryptopp)
++    include(FindPkgConfig)
++    find_package(LibCrypto++)
++endif()
++
++if (USE_SYSTEM_ZSTD AND NOT TARGET zstd)
++    include(FindPkgConfig)
++    find_package(LibCrypto++)
++endif()
++
+ add_subdirectory(externals)
+ 
+ # Boost
+diff --git a/externals/CMakeLists.txt b/externals/CMakeLists.txt
+index fdd09006c..e02f8867b 100644
+--- a/externals/CMakeLists.txt
++++ b/externals/CMakeLists.txt
+@@ -17,9 +17,11 @@ add_library(boost INTERFACE)
+ target_include_directories(boost SYSTEM INTERFACE ${Boost_INCLUDE_DIR})
+ 
+ # Boost::serialization
+-file(GLOB boost_serialization_SRC "${CMAKE_SOURCE_DIR}/externals/boost/libs/serialization/src/*.cpp")
+-add_library(boost_serialization STATIC ${boost_serialization_SRC})
+-target_link_libraries(boost_serialization PUBLIC boost)
++if (NOT USE_SYSTEM_BOOST)
++    file(GLOB boost_serialization_SRC "${CMAKE_SOURCE_DIR}/externals/boost/libs/serialization/src/*.cpp")
++    add_library(boost_serialization STATIC ${boost_serialization_SRC})
++    target_link_libraries(boost_serialization PUBLIC boost)
++endif()
+ 
+ # Add additional boost libs here; remember to ALIAS them in the root CMakeLists!
+ 
+@@ -28,12 +30,18 @@ add_library(catch-single-include INTERFACE)
+ target_include_directories(catch-single-include INTERFACE catch/single_include)
+ 
+ # Crypto++
+-add_subdirectory(cryptopp)
++if (NOT USE_SYSTEM_CRYPTOPP)
++    add_subdirectory(cryptopp)
++endif()
+ 
+ # Xbyak
+ if (ARCHITECTURE_x86_64)
+     add_library(xbyak INTERFACE)
+-    target_include_directories(xbyak SYSTEM INTERFACE ./xbyak/xbyak)
++    if (USE_SYSTEM_XBYAK)
++        target_include_directories(xbyak INTERFACE /usr/include/xbyak)
++    else()
++        target_include_directories(xbyak INTERFACE ./xbyak/xbyak)
++    endif()
+     target_compile_definitions(xbyak INTERFACE XBYAK_NO_OP_NAMES)
+ endif()
+ 
+@@ -46,8 +54,12 @@ if (ARCHITECTURE_x86_64 OR ARCHITECTURE_ARM64)
+ endif()
+ 
+ # libfmt
+-add_subdirectory(fmt)
+-add_library(fmt::fmt ALIAS fmt)
++if (NOT USE_SYSTEM_FMT)
++    add_subdirectory(fmt)
++    add_library(fmt::fmt ALIAS fmt)
++else()
++    set(DYNARMIC_NO_BUNDLED_FMT ON)
++endif()
+ 
+ # getopt
+ if (MSVC)
+@@ -105,11 +117,12 @@ target_include_directories(libretro INTERFACE ./libretro)
+ 
+ if (ENABLE_WEB_SERVICE)
+     # LibreSSL
+-    set(LIBRESSL_SKIP_INSTALL ON CACHE BOOL "")
+-    add_subdirectory(libressl EXCLUDE_FROM_ALL)
+-    target_include_directories(ssl INTERFACE ./libressl/include)
+-    target_compile_definitions(ssl PRIVATE -DHAVE_INET_NTOP)
+-
++    if (NOT USE_SYSTEM_SSL)
++        set(LIBRESSL_SKIP_INSTALL ON CACHE BOOL "")
++        add_subdirectory(libressl EXCLUDE_FROM_ALL)
++        target_include_directories(ssl INTERFACE ./libressl/include)
++        target_compile_definitions(ssl PRIVATE -DHAVE_INET_NTOP)
++    endif()
+     # JSON
+     add_library(json-headers INTERFACE)
+     target_include_directories(json-headers INTERFACE ./json)
+diff --git a/externals/cmake-modules/FindZstd.cmake b/externals/cmake-modules/FindZstd.cmake
+new file mode 100644
+index 000000000..024209952
+--- /dev/null
++++ b/externals/cmake-modules/FindZstd.cmake
+@@ -0,0 +1,43 @@
++# - Find Zstd library
++# This module defines
++#  ZSTD_INCLUDE_DIR, where to find headers.
++#  ZSTD_LIBRARIES, the libraries needed to use cryptopp.
++#  ZSTD_FOUND, If false, do not try to use libzstd.
++#
++# Copyright (c) 2009, Michal Cihar, <michal@cihar.com>
++#
++# vim: expandtab sw=4 ts=4 sts=4:
++
++if(ANDROID)
++       set(ZSTD_FOUND FALSE CACHE INTERNAL "Zstd found")
++       message(STATUS "Zstd not found.")
++elseif (NOT ZSTD_FOUND)
++    pkg_check_modules (ZSTD_PKG libzstd)
++
++    find_path(ZSTD_INCLUDE_DIR NAMES zstd.h
++       PATHS
++       ${ZSTD_PKG_INCLUDE_DIRS}
++       /usr/include/cryptopp
++       /usr/include
++       /usr/local/include/cryptopp
++       /usr/local/include
++    )
++
++    find_library(ZSTD_LIBRARIES NAMES libzstd zstd
++       PATHS
++       ${ZSTD_PKG_LIBRARY_DIRS}
++       /usr/lib
++       /usr/local/lib
++    )
++
++    if(ZSTD_INCLUDE_DIR AND ZSTD_LIBRARIES)
++       set(ZSTD_FOUND TRUE CACHE INTERNAL "Zstd found")
++       message(STATUS "Found libzstd: ${ZSTD_INCLUDE_DIR}, ${ZSTD_LIBRARIES}")
++    else(ZSTD_INCLUDE_DIR AND ZSTD_LIBRARIES)
++       set(ZSTD_FOUND FALSE CACHE INTERNAL "Zstd found")
++       message(STATUS "Zstd not found.")
++    endif(ZSTD_INCLUDE_DIR AND ZSTD_LIBRARIES)
++
++    mark_as_advanced(ZSTD_INCLUDE_DIR ZSTD_LIBRARIES)
++endif ()
++
+diff --git a/externals/cmake-modules/FindSoundTouch.cmake b/externals/cmake-modules/FindSoundTouch.cmake
+new file mode 100644
+index 000000000..024209952
+--- /dev/null
++++ b/externals/cmake-modules/FindSoundTouch.cmake
+@@ -0,0 +1,43 @@
++# - Find SoundTouch library
++# This module defines
++#  SOUNDTOUCH_INCLUDE_DIR, where to find headers.
++#  SOUNDTOUCH_LIBRARIES, the libraries needed to use soundtouch.
++#  SOUNDTOUCH_FOUND, If false, do not try to use soundtouch.
++#
++# Copyright (c) 2009, Michal Cihar, <michal@cihar.com>
++#
++# vim: expandtab sw=4 ts=4 sts=4:
++
++if(ANDROID)
++       set(SOUNDTOUCH_FOUND FALSE CACHE INTERNAL "SoundTouch found")
++       message(STATUS "SoundTouch not found.")
++elseif (NOT SOUNDTOUCH_FOUND)
++    pkg_check_modules (SOUNDTOUCH_PKG soundtouch)
++
++    find_path(SOUNDTOUCH_INCLUDE_DIR NAMES SoundTouch.h
++       PATHS
++       ${SOUNDTOUCH_PKG_INCLUDE_DIRS}
++       /usr/include/soundtouch
++       /usr/include
++       /usr/local/include/soundtouch
++       /usr/local/include
++    )
++
++    find_library(SOUNDTOUCH_LIBRARIES NAMES libsoundtouch soundtouch
++       PATHS
++       ${SOUNDTOUCH_PKG_LIBRARY_DIRS}
++       /usr/lib
++       /usr/local/lib
++    )
++
++    if(SOUNDTOUCH_INCLUDE_DIR AND SOUNDTOUCH_LIBRARIES)
++       set(SOUNDTOUCH_FOUND TRUE CACHE INTERNAL "SoundTouch found")
++       message(STATUS "Found SoundTouch: ${SOUNDTOUCH_INCLUDE_DIR}, ${SOUNDTOUCH_LIBRARIES}")
++    else(SOUNDTOUCH_INCLUDE_DIR AND SOUNDTOUCH_LIBRARIES)
++       set(SOUNDTOUCH_FOUND FALSE CACHE INTERNAL "SoundTouch found")
++       message(STATUS "SoundTouch not found.")
++    endif(SOUNDTOUCH_INCLUDE_DIR AND SOUNDTOUCH_LIBRARIES)
++
++    mark_as_advanced(SOUNDTOUCH_INCLUDE_DIR SOUNDTOUCH_LIBRARIES)
++endif ()
++
+diff --git a/externals/cmake-modules/FindLibCrypto++.cmake b/externals/cmake-modules/FindLibCrypto++.cmake
+new file mode 100644
+index 000000000..024209952
+--- /dev/null
++++ b/externals/cmake-modules/FindLibCrypto++.cmake
+@@ -0,0 +1,43 @@
++# - Find Crypto++ library
++# This module defines
++#  LIBCRYPTOPP_INCLUDE_DIR, where to find headers.
++#  LIBCRYPTOPP_LIBRARIES, the libraries needed to use cryptopp.
++#  LIBCRYPTOPP_FOUND, If false, do not try to use cryptopp.
++#
++# Copyright (c) 2009, Michal Cihar, <michal@cihar.com>
++#
++# vim: expandtab sw=4 ts=4 sts=4:
++
++if(ANDROID)
++       set(LIBCRYPTOPP_FOUND FALSE CACHE INTERNAL "Crypto++ found")
++       message(STATUS "Crypto++ not found.")
++elseif (NOT LIBCRYPTOPP_FOUND)
++    pkg_check_modules (LIBCRYPTOPP_PKG libcryptopp)
++
++    find_path(LIBCRYPTOPP_INCLUDE_DIR NAMES crc.h
++       PATHS
++       ${LIBCRYPTOPP_PKG_INCLUDE_DIRS}
++       /usr/include/cryptopp
++       /usr/include
++       /usr/local/include/cryptopp
++       /usr/local/include
++    )
++
++    find_library(LIBCRYPTOPP_LIBRARIES NAMES libcryptopp cryptopp
++       PATHS
++       ${LIBCRYPTOPP_PKG_LIBRARY_DIRS}
++       /usr/lib
++       /usr/local/lib
++    )
++
++    if(LIBCRYPTOPP_INCLUDE_DIR AND LIBCRYPTOPP_LIBRARIES)
++       set(LIBCRYPTOPP_FOUND TRUE CACHE INTERNAL "Crypto++ found")
++       message(STATUS "Found libcryptopp: ${LIBCRYPTOPP_INCLUDE_DIR}, ${LIBCRYPTOPP_LIBRARIES}")
++    else(LIBCRYPTOPP_INCLUDE_DIR AND LIBCRYPTOPP_LIBRARIES)
++       set(LIBCRYPTOPP_FOUND FALSE CACHE INTERNAL "Crypto++ found")
++       message(STATUS "Crypto++ not found.")
++    endif(LIBCRYPTOPP_INCLUDE_DIR AND LIBCRYPTOPP_LIBRARIES)
++
++    mark_as_advanced(LIBCRYPTOPP_INCLUDE_DIR LIBCRYPTOPP_LIBRARIES)
++endif ()
++
+diff --git a/externals/cmake-modules/FindLibSSL.cmake b/externals/cmake-modules/FindLibSSL.cmake
+new file mode 100644
+index 000000000..857f8121a
+--- /dev/null
++++ b/externals/cmake-modules/FindLibSSL.cmake
+@@ -0,0 +1,56 @@
++# - Find libssl library
++# This module defines
++#  OPENSSL_INCLUDE_DIR, where to find ssl.h
++#  OPENSSL_LIBS, the libraries needed to use libssl.
++#  OPENSSL_FOUND, If false, do not try to use libssl.
++#
++# Copyright (c) 2009, Michal Cihar, <michal@cihar.com>
++#
++# vim: expandtab sw=4 ts=4 sts=4:
++
++if(ANDROID)
++       set(OPENSSL_FOUND FALSE CACHE INTERNAL "libssl found")
++       message(STATUS "libssl not found.")
++elseif (NOT OPENSSL_FOUND)
++    pkg_check_modules (OPENSSL_PKG openssl)
++
++    find_path(OPENSSL_INCLUDE_DIR NAMES ssl.h crypto.h
++       PATHS
++       ${OPENSSL_PKG_INCLUDE_DIRS}
++       /usr/include/openssl
++       /usr/include/libressl
++       /usr/include/ssl
++       /usr/include
++       /usr/local/include/openssl
++       /usr/local/include/libressl
++       /usr/local/include/ssl
++       /usr/local/include
++    )
++
++    find_library(OPENSSL_SSL_LIBRARIES NAMES ssl
++       PATHS
++       ${OPENSSL_PKG_LIBRARY_DIRS}
++       /usr/lib
++       /usr/local/lib
++    )
++
++    find_library(OPENSSL_CRYPTO_LIBRARIES NAMES crypto
++       PATHS
++       ${OPENSSL_PKG_LIBRARY_DIRS}
++       /usr/lib
++       /usr/local/lib
++    )
++
++    list(APPEND OPENSSL_LIBS ${OPENSSL_SSL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARIES})
++
++    if(OPENSSL_INCLUDE_DIR AND OPENSSL_LIBS)
++       set(OPENSSL_FOUND TRUE CACHE INTERNAL "libssl found")
++       message(STATUS "Found libssl: ${OPENSSL_INCLUDE_DIR}, ${OPENSSL_LIBS}")
++    else(OPENSSL_INCLUDE_DIR AND OPENSSL_LIBS)
++       set(OPENSSL_FOUND FALSE CACHE INTERNAL "libssl found")
++       message(STATUS "libssl not found.")
++    endif(OPENSSL_INCLUDE_DIR AND OPENSSL_LIBS)
++
++    mark_as_advanced(OPENSSL_INCLUDE_DIR OPENSSL_LIBS)
++endif ()
++
+diff --git a/src/core/CMakeLists.txt b/src/core/CMakeLists.txt
+index 5378d2f68..076983869 100644
+--- a/src/core/CMakeLists.txt
++++ b/src/core/CMakeLists.txt
+@@ -474,9 +474,11 @@ target_link_libraries(core PUBLIC common PRIVATE audio_core network video_core)
+ target_link_libraries(core PUBLIC Boost::boost PRIVATE cryptopp fmt open_source_archives Boost::serialization)
+ 
+ if (ENABLE_WEB_SERVICE)
+-    get_directory_property(OPENSSL_LIBS
+-        DIRECTORY ${PROJECT_SOURCE_DIR}/externals/libressl
+-        DEFINITION OPENSSL_LIBS)
++    if (NOT USE_SYSTEM_SSL)
++        get_directory_property(OPENSSL_LIBS
++            DIRECTORY ${PROJECT_SOURCE_DIR}/externals/libressl
++            DEFINITION OPENSSL_LIBS)
++    endif()
+ 
+     target_compile_definitions(core PRIVATE -DENABLE_WEB_SERVICE -DCPPHTTPLIB_OPENSSL_SUPPORT)
+     target_link_libraries(core PRIVATE web_service ${OPENSSL_LIBS} httplib lurlparser)
+diff --git a/src/web_service/CMakeLists.txt b/src/web_service/CMakeLists.txt
+index 5695e25f0..897f4b509 100644
+--- a/src/web_service/CMakeLists.txt
++++ b/src/web_service/CMakeLists.txt
+@@ -13,9 +13,11 @@ add_library(web_service STATIC
+ 
+ create_target_directory_groups(web_service)
+ 
+-get_directory_property(OPENSSL_LIBS
+-        DIRECTORY ${PROJECT_SOURCE_DIR}/externals/libressl
+-        DEFINITION OPENSSL_LIBS)
++if (NOT USE_SYSTEM_SSL)
++    get_directory_property(OPENSSL_LIBS
++            DIRECTORY ${PROJECT_SOURCE_DIR}/externals/libressl
++            DEFINITION OPENSSL_LIBS)
++endif()
+ target_compile_definitions(web_service PRIVATE -DCPPHTTPLIB_OPENSSL_SUPPORT)
+ target_link_libraries(web_service PRIVATE common network json-headers ${OPENSSL_LIBS} httplib lurlparser cpp-jwt)
+ if (ANDROID)
+-- 
+2.33.0
+

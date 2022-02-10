@@ -1,0 +1,108 @@
+From 623b0621ab52df03ebb993979c220550135a0213 Mon Sep 17 00:00:00 2001
+From: Tobias <thm.frey@gmail.com>
+Date: Wed, 1 May 2019 14:28:49 +0200
+Subject: [PATCH 10/23] Port various minor changes from yuzu PRs (#4725)
+
+* common/thread: Remove unused functions
+
+Many of these functions are carried over from Dolphin (where they aren't
+used anymore). Given these have no use (and we really shouldn't be
+screwing around with OS-specific thread scheduler handling from the
+emulator, these can be removed.
+
+The function for setting the thread name is left, however, since it can
+have debugging utility usages.
+
+* input_common/sdl: Use a type alias to shorten declaration of GetPollers
+
+Just makes the definitions a little bit more tidy.
+
+* input_common/sdl: Correct return values within implementations of GetPollers()
+
+In both cases, we weren't actually returning anything, which is
+undefined behavior.
+
+* yuzu/debugger/graphics_surface: Fill in missing surface format listings
+
+Fills in the missing surface types that were marked as unknown. The
+order corresponds with the TextureFormat enum within
+video_core/texture.h.
+
+We also don't need to all of these strings as translatable (only the
+first string, as it's an English word).
+
+* yuzu/debugger/graphics_surface: Clean up connection overload deduction
+
+We can utilize qOverload with the signal connections to make the
+function deducing a little less ugly.
+
+* yuzu/debugger/graphics_surface: Tidy up SaveSurface
+
+- Use QStringLiteral where applicable.
+
+- Use const where applicable
+
+- Remove unnecessary precondition check (we already assert the pixbuf
+  being non null)
+
+* yuzu/debugger/graphics_surface: Display error messages for file I/O errors
+
+* core: Add missing override specifiers where applicable
+
+Applies the override specifier where applicable. In the case of
+destructors that are  defaulted in their definition, they can
+simply be removed.
+
+This also removes the unnecessary inclusions being done in audin_u and
+audrec_u, given their close proximity.
+
+* kernel/thread: Make parameter of GetWaitObjectIndex() const qualified
+
+The pointed to member is never actually modified, so it can be made
+const.
+
+* kernel/thread: Avoid sign conversion within GetCommandBufferAddress()
+
+Previously this was performing a u64 + int sign conversion. When dealing
+with addresses, we should generally be keeping the arithmetic in the
+same signedness type.
+
+This also gets rid of the static lifetime of the constant, as there's no
+need to make a trivial type like this potentially live for the entire
+duration of the program.
+
+* kernel/codeset: Make CodeSet's memory data member a regular std::vector
+
+The use of a shared_ptr is an implementation detail of the VMManager
+itself when mapping memory. Because of that, we shouldn't require all
+users of the CodeSet to have to allocate the shared_ptr ahead of time.
+It's intended that CodeSet simply pass in the required direct data, and
+that the memory manager takes care of it from that point on.
+
+This means we just do the shared pointer allocation in a single place,
+when loading modules, as opposed to in each loader.
+
+* kernel/wait_object: Make ShouldWait() take thread members by pointer-to-const
+
+Given this is intended as a querying function, it doesn't make sense to
+allow the implementer to modify the state of the given thread.
+---
+ src/core/arm/dynarmic/arm_dynarmic.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/core/arm/dynarmic/arm_dynarmic.h b/src/core/arm/dynarmic/arm_dynarmic.h
+index 537784e08..02467f879 100644
+--- a/src/core/arm/dynarmic/arm_dynarmic.h
++++ b/src/core/arm/dynarmic/arm_dynarmic.h
+@@ -25,7 +25,7 @@ class DynarmicUserCallbacks;
+ class ARM_Dynarmic final : public ARM_Interface {
+ public:
+     ARM_Dynarmic(Core::System* system, Memory::MemorySystem& memory, PrivilegeMode initial_mode);
+-    ~ARM_Dynarmic();
++    ~ARM_Dynarmic() override;
+ 
+     void Run() override;
+     void Step() override;
+-- 
+2.33.0
+

@@ -1,0 +1,28 @@
+From 0478bc3dee06087b84106803cb13a45cda1daa7a Mon Sep 17 00:00:00 2001
+From: Weiyi Wang <wwylele@gmail.com>
+Date: Tue, 23 Oct 2018 11:40:57 -0400
+Subject: [PATCH 02/23] Kernel/Thread: move thread queue, current thread, and
+ scheduling related function into the manager
+
+As we touched it, remove IPC::GetCommandBuffer
+---
+ src/core/arm/dynarmic/arm_dynarmic.cpp | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/core/arm/dynarmic/arm_dynarmic.cpp b/src/core/arm/dynarmic/arm_dynarmic.cpp
+index 3cfd2a6d6..b079afa9a 100644
+--- a/src/core/arm/dynarmic/arm_dynarmic.cpp
++++ b/src/core/arm/dynarmic/arm_dynarmic.cpp
+@@ -134,7 +134,8 @@ public:
+             if (GDBStub::IsConnected()) {
+                 parent.jit->HaltExecution();
+                 parent.SetPC(pc);
+-                Kernel::Thread* thread = Kernel::GetCurrentThread();
++                Kernel::Thread* thread =
++                    Core::System::GetInstance().Kernel().GetThreadManager().GetCurrentThread();
+                 parent.SaveContext(thread->context);
+                 GDBStub::Break();
+                 GDBStub::SendTrap(thread, 5);
+-- 
+2.33.0
+

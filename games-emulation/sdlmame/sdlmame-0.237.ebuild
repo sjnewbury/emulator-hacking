@@ -2,7 +2,7 @@
 # Distributed under the terms of the GNU General Public License v2
 
 EAPI=7
-PYTHON_COMPAT=( python3_{6,7,8} )
+PYTHON_COMPAT=( python3_{7..10} )
 inherit eutils python-any-r1 toolchain-funcs flag-o-matic qmake-utils
 
 MY_PV="${PV/.}"
@@ -107,11 +107,11 @@ src_compile() {
 	filter-flags '-g*'
 
 	# odr violations
-	filter-flags '-flto*'
+	#filter-flags '-flto*'
 
 	# Can trigger OOM even on 16GB systems with bfd
-	append-flags -fuse-ld=gold -Wl,-no-keep-memory -Wl,-reduce-memory-overheads
-	append-ldflags -Wl,-no-keep-memory -Wl,-reduce-memory-overheads
+	#append-flags -fuse-ld=gold -Wl,-no-keep-memory -Wl,-reduce-memory-overheads
+	#append-ldflags -Wl,-no-keep-memory -Wl,-reduce-memory-overheads
 
 	use arcade && ! use mess && targetargs="SUBTARGET=arcade"
 	! use arcade && use mess && targetargs="SUBTARGET=mess"

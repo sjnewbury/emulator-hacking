@@ -1,0 +1,112 @@
+From 76625a47aa93f41028af7eef0559a36ee985b6d3 Mon Sep 17 00:00:00 2001
+From: Steven Newbury <steve@snewbury.org.uk>
+Date: Mon, 13 Sep 2021 14:25:34 +0100
+Subject: [PATCH] Allow unbundling xbyak and fmt
+
+---
+ CMakeLists.txt           |  8 +++++++-
+ externals/CMakeLists.txt | 16 ++++++++++++----
+ 2 files changed, 19 insertions(+), 5 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 729c6ba4d..6aeec8a08 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -43,6 +43,12 @@ CMAKE_DEPENDENT_OPTION(COMPILE_WITH_DWARF "Add DWARF debugging information" ON "
+ 
+ option(USE_SYSTEM_BOOST "Use the system Boost libs (instead of the bundled ones)" OFF)
+ 
++option(USE_SYSTEM_FMT "Use the system libfmt (instead of the bundled ones)" OFF)
++
++option(USE_SYSTEM_XBYAK "Use the system xbyak (instead of the bundled ones)" OFF)
++
++option(USE_SYSTEM_CRYPTOPP "Use the system crypto++ (instead of the bundled ones)" OFF)
++
+ CMAKE_DEPENDENT_OPTION(ENABLE_FDK "Use FDK AAC decoder" OFF "NOT ENABLE_FFMPEG_AUDIO_DECODER;NOT ENABLE_MF" OFF)
+ 
+ if(NOT EXISTS ${PROJECT_SOURCE_DIR}/.git/hooks/pre-commit)
+@@ -65,7 +71,7 @@ function(check_submodules_present)
+         endif()
+     endforeach()
+ endfunction()
+-check_submodules_present()
++#check_submodules_present()
+ 
+ configure_file(${PROJECT_SOURCE_DIR}/dist/compatibility_list/compatibility_list.qrc
+                ${PROJECT_BINARY_DIR}/dist/compatibility_list/compatibility_list.qrc
+@@ -430,6 +436,17 @@ if (NOT USE_SYSTEM_BOOST)
+ endif()
+ 
+ enable_testing()
++
++if (USE_SYSTEM_FMT AND NOT TARGET fmt)
++    find_package(fmt REQUIRED)
++    add_library(fmt ALIAS fmt::fmt)
++endif()
++
++if (USE_SYSTEM_CRYPTOPP AND NOT TARGET cryptopp)
++    include(FindPkgConfig)
++    find_package(cryptopp)
++endif()
++
+ add_subdirectory(externals)
+ 
+ # Boost
+diff --git a/externals/CMakeLists.txt b/externals/CMakeLists.txt
+index fdd09006c..4f34e541e 100644
+--- a/externals/CMakeLists.txt
++++ b/externals/CMakeLists.txt
+@@ -28,12 +28,18 @@ add_library(catch-single-include INTERFACE)
+ target_include_directories(catch-single-include INTERFACE catch/single_include)
+ 
+ # Crypto++
+-add_subdirectory(cryptopp)
++if (NOT USE_SYSTEM_CRYPTOPP)
++    add_subdirectory(cryptopp)
++endif()
+ 
+ # Xbyak
+ if (ARCHITECTURE_x86_64)
+     add_library(xbyak INTERFACE)
+-    target_include_directories(xbyak SYSTEM INTERFACE ./xbyak/xbyak)
++    if (USE_SYSTEM_XBYAK)
++        target_include_directories(xbyak INTERFACE /usr/include/xbyak)
++    else()
++        target_include_directories(xbyak INTERFACE ./xbyak/xbyak)
++    endif()
+     target_compile_definitions(xbyak INTERFACE XBYAK_NO_OP_NAMES)
+ endif()
+ 
+@@ -46,8 +52,12 @@ if (ARCHITECTURE_x86_64 OR ARCHITECTURE_ARM64)
+ endif()
+ 
+ # libfmt
+-add_subdirectory(fmt)
+-add_library(fmt::fmt ALIAS fmt)
++if (NOT USE_SYSTEM_FMT)
++    add_subdirectory(fmt)
++    add_library(fmt::fmt ALIAS fmt)
++else()
++    set(DYNARMIC_NO_BUNDLED_FMT ON)
++endif()
+ 
+ # getopt
+ if (MSVC)
+-- 
+2.33.0
+
+--- ./externals/CMakeLists.txt~	2021-09-15 16:36:32.000000000 +0100
++++ ./externals/CMakeLists.txt	2021-09-15 16:40:25.389550480 +0100
+@@ -18,7 +18,9 @@
+ 
+ # Boost::serialization
++if (NOT USE_SYSTEM_BOOST)
+-file(GLOB boost_serialization_SRC "${CMAKE_SOURCE_DIR}/externals/boost/libs/serialization/src/*.cpp")
+-add_library(boost_serialization STATIC ${boost_serialization_SRC})
+-target_link_libraries(boost_serialization PUBLIC boost)
++    file(GLOB boost_serialization_SRC "${CMAKE_SOURCE_DIR}/externals/boost/libs/serialization/src/*.cpp")
++    add_library(boost_serialization STATIC ${boost_serialization_SRC})
++    target_link_libraries(boost_serialization PUBLIC boost)
++endif()
+ 
+ # Add additional boost libs here; remember to ALIAS them in the root CMakeLists!

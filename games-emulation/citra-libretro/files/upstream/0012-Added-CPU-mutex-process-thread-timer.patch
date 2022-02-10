@@ -1,0 +1,39 @@
+From f557d26b40d4cc034bd9599b801ef5bf524d537c Mon Sep 17 00:00:00 2001
+From: Hamish Milne <hamishmilne83@gmail.com>
+Date: Mon, 12 Aug 2019 17:01:33 +0100
+Subject: [PATCH 12/23] Added CPU, mutex, process, thread, timer
+
+---
+ src/core/arm/dynarmic/arm_dynarmic.cpp | 2 +-
+ src/core/arm/dynarmic/arm_dynarmic.h   | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/core/arm/dynarmic/arm_dynarmic.cpp b/src/core/arm/dynarmic/arm_dynarmic.cpp
+index f494b5228..a422db6af 100644
+--- a/src/core/arm/dynarmic/arm_dynarmic.cpp
++++ b/src/core/arm/dynarmic/arm_dynarmic.cpp
+@@ -235,7 +235,7 @@ void ARM_Dynarmic::SetCPSR(u32 cpsr) {
+     jit->SetCpsr(cpsr);
+ }
+ 
+-u32 ARM_Dynarmic::GetCP15Register(CP15Register reg) {
++u32 ARM_Dynarmic::GetCP15Register(CP15Register reg) const {
+     return interpreter_state->CP15[reg];
+ }
+ 
+diff --git a/src/core/arm/dynarmic/arm_dynarmic.h b/src/core/arm/dynarmic/arm_dynarmic.h
+index 559dbf5a8..ff9a104b5 100644
+--- a/src/core/arm/dynarmic/arm_dynarmic.h
++++ b/src/core/arm/dynarmic/arm_dynarmic.h
+@@ -40,7 +40,7 @@ public:
+     void SetVFPSystemReg(VFPSystemRegister reg, u32 value) override;
+     u32 GetCPSR() const override;
+     void SetCPSR(u32 cpsr) override;
+-    u32 GetCP15Register(CP15Register reg) override;
++    u32 GetCP15Register(CP15Register reg) const override;
+     void SetCP15Register(CP15Register reg, u32 value) override;
+ 
+     std::unique_ptr<ThreadContext> NewContext() const override;
+-- 
+2.33.0
+

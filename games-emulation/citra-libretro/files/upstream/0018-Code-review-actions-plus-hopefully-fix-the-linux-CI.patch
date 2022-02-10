@@ -1,0 +1,29 @@
+From 92640fc29c6fee66b6c110ce7631f8e5b3e74e72 Mon Sep 17 00:00:00 2001
+From: Hamish Milne <hamishmilne83@gmail.com>
+Date: Tue, 31 Mar 2020 17:54:28 +0100
+Subject: [PATCH 18/23] Code review actions (plus hopefully fix the linux CI)
+
+---
+ src/core/arm/dynarmic/arm_dynarmic.h | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/src/core/arm/dynarmic/arm_dynarmic.h b/src/core/arm/dynarmic/arm_dynarmic.h
+index a8f224083..a5b4893a6 100644
+--- a/src/core/arm/dynarmic/arm_dynarmic.h
++++ b/src/core/arm/dynarmic/arm_dynarmic.h
+@@ -53,9 +53,11 @@ public:
+     void ClearInstructionCache() override;
+     void InvalidateCacheRange(u32 start_address, std::size_t length) override;
+     void SetPageTable(const std::shared_ptr<Memory::PageTable>& page_table) override;
+-    std::shared_ptr<Memory::PageTable> GetPageTable() const override;
+     void PurgeState() override;
+ 
++protected:
++    std::shared_ptr<Memory::PageTable> GetPageTable() const override;
++
+ private:
+     friend class DynarmicUserCallbacks;
+     Core::System& system;
+-- 
+2.33.0
+

@@ -5,7 +5,7 @@
 
 EAPI=6
 
-PYTHON_COMPAT=( python{3_4,3_5,3_6,3_7,3_8} )
+PYTHON_COMPAT=( python3_{8,9,10} )
 
 LIBRETRO_REPO_NAME="libretro/RetroArch"
 inherit flag-o-matic libretro python-single-r1
@@ -26,11 +26,6 @@ fi
 
 LICENSE="GPL-3"
 SLOT="0"
-
-#FIXME: Revaluate the "wayland? ( egl )" entry below. Due to unresolved upstream
-#issues, Wayland support erroneously requires EGL support. Ideally, it
-#shouldn't. When upstream resolves this, remove this entry. See also:
-#    https://github.com/stefan-gr/abendbrot/issues/7#issuecomment-204541979
 
 IUSE="+7zip alsa +armvfp +assets cg cheevos +cores +database debug dispmanx egl ffmpeg gles2 gles3 jack +joypad_autoconfig kms lakka libass libusb +materialui miniupnpc +neon +network openal +opengl osmesa oss +overlays pulseaudio qt5 sdl sdl2 +shaders +truetype +threads +udev v4l2 videocore vulkan wayland X xinerama +xmb +xml xv zlib cpu_flags_x86_sse2 python"
 
@@ -76,7 +71,7 @@ RDEPEND="
 	libusb? ( virtual/libusb:1= )
 	miniupnpc? ( >=net-libs/miniupnpc-2.0:0= )
 	openal? ( media-libs/openal:0= )
-	opengl? ( media-libs/mesa:0=[egl?,gles2?] )
+	opengl? ( media-libs/mesa:0=[gles2?] )
 	osmesa? ( media-libs/mesa:0=[osmesa?] )
 	overlays? ( games-emulation/common-overlays:0= )
 	pulseaudio? ( media-sound/pulseaudio:0= )

@@ -1,0 +1,48 @@
+From b4d9d9661a0f8d40f2e0b863149cb341fc906d4c Mon Sep 17 00:00:00 2001
+From: MerryMage <MerryMage@users.noreply.github.com>
+Date: Fri, 28 Sep 2018 20:10:51 +0100
+Subject: [PATCH 01/23] arm_dynarmic: Pass breakpoints to gdbstub
+
+Allow gdbstub to handle execution breakpoints
+---
+ src/core/arm/dynarmic/arm_dynarmic.cpp | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/src/core/arm/dynarmic/arm_dynarmic.cpp b/src/core/arm/dynarmic/arm_dynarmic.cpp
+index 4220ebd3c..3cfd2a6d6 100644
+--- a/src/core/arm/dynarmic/arm_dynarmic.cpp
++++ b/src/core/arm/dynarmic/arm_dynarmic.cpp
+@@ -12,6 +12,7 @@
+ #include "core/arm/dyncom/arm_dyncom_interpreter.h"
+ #include "core/core.h"
+ #include "core/core_timing.h"
++#include "core/gdbstub/gdbstub.h"
+ #include "core/hle/kernel/svc.h"
+ #include "core/memory.h"
+ 
+@@ -125,6 +126,22 @@ public:
+     }
+ 
+     void ExceptionRaised(VAddr pc, Dynarmic::A32::Exception exception) override {
++        switch (exception) {
++        case Dynarmic::A32::Exception::UndefinedInstruction:
++        case Dynarmic::A32::Exception::UnpredictableInstruction:
++            break;
++        case Dynarmic::A32::Exception::Breakpoint:
++            if (GDBStub::IsConnected()) {
++                parent.jit->HaltExecution();
++                parent.SetPC(pc);
++                Kernel::Thread* thread = Kernel::GetCurrentThread();
++                parent.SaveContext(thread->context);
++                GDBStub::Break();
++                GDBStub::SendTrap(thread, 5);
++                return;
++            }
++            break;
++        }
+         ASSERT_MSG(false, "ExceptionRaised(exception = {}, pc = {:08X}, code = {:08X})",
+                    static_cast<std::size_t>(exception), pc, MemoryReadCode(pc));
+     }
+-- 
+2.33.0
+

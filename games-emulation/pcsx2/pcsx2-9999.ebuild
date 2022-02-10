@@ -9,7 +9,13 @@ inherit cmake fcaps flag-o-matic git-r3 toolchain-funcs wxwidgets
 DESCRIPTION="A PlayStation 2 emulator"
 HOMEPAGE="https://pcsx2.net/"
 EGIT_REPO_URI="https://github.com/PCSX2/${PN}.git"
-EGIT_SUBMODULES=( 3rdparty/libchdr/libchdr )
+EGIT_SUBMODULES=(
+	3rdparty/libchdr/libchdr
+	3rdparty/cubeb/cubeb
+	3rdparty/imgui/imgui
+	3rdparty/vulkan-headers
+	3rdparty/glslang/glslang
+)
 
 LICENSE="GPL-3"
 SLOT="0"
@@ -21,8 +27,8 @@ RESTRICT="!test? ( test )"
 RDEPEND="
 	app-arch/bzip2
 	app-arch/xz-utils
-	dev-cpp/yaml-cpp:=
 	dev-libs/libaio
+	dev-cpp/rapidyaml
 	>=dev-libs/libfmt-7.1.3:=
 	dev-libs/libxml2:2
 	media-libs/alsa-lib
@@ -45,7 +51,7 @@ DEPEND="${RDEPEND}"
 BDEPEND="test? ( dev-cpp/gtest )"
 
 FILECAPS=(
-	-m 755 "CAP_NET_RAW+eip CAP_NET_ADMIN+eip" usr/bin/PCSX2
+	-m 755 "CAP_NET_RAW+eip CAP_NET_ADMIN+eip" usr/bin/pcsx2
 )
 
 pkg_setup() {
@@ -68,11 +74,11 @@ src_configure() {
 	local CMAKE_BUILD_TYPE="Release"
 	local mycmakeargs=(
 		-DARCH_FLAG=
+		-DBUILD_SHARED_LIBS=FALSE
 		-DDISABLE_BUILD_DATE=TRUE
 		-DDISABLE_PCSX2_WRAPPER=TRUE
 		-DDISABLE_SETCAP=TRUE
 		-DENABLE_TESTS="$(usex test)"
-		-DOPTIMIZATION_FLAG=
 		-DPACKAGE_MODE=TRUE
 		-DXDG_STD=TRUE
 		-DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON
@@ -92,7 +98,7 @@ src_install() {
 	# Upstream issues:
 	#  https://github.com/PCSX2/pcsx2/issues/417
 	#  https://github.com/PCSX2/pcsx2/issues/3077
-	QA_EXECSTACK="usr/bin/PCSX2"
-	QA_TEXTRELS="usr/$(get_libdir)/PCSX2/* usr/bin/PCSX2"
+	QA_EXECSTACK="usr/bin/pcsx2"
+	QA_TEXTRELS="usr/$(get_libdir)/PCSX2/* usr/bin/pcsx2"
 	cmake_src_install
 }

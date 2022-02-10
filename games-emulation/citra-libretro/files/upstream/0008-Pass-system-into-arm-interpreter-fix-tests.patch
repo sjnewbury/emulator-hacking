@@ -1,0 +1,34 @@
+From e87dc17da2dc32d128ee72b65b602d27cf46a8a7 Mon Sep 17 00:00:00 2001
+From: Weiyi Wang <wwylele@gmail.com>
+Date: Wed, 21 Nov 2018 17:14:42 -0500
+Subject: [PATCH 08/23] Pass system into arm interpreter; fix tests
+
+---
+ src/core/arm/dynarmic/arm_dynarmic.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/core/arm/dynarmic/arm_dynarmic.cpp b/src/core/arm/dynarmic/arm_dynarmic.cpp
+index 2c60dbac9..62c63f9ac 100644
+--- a/src/core/arm/dynarmic/arm_dynarmic.cpp
++++ b/src/core/arm/dynarmic/arm_dynarmic.cpp
+@@ -137,7 +137,7 @@ public:
+                 parent.jit->HaltExecution();
+                 parent.SetPC(pc);
+                 Kernel::Thread* thread =
+-                    Core::System::GetInstance().Kernel().GetThreadManager().GetCurrentThread();
++                    parent.system.Kernel().GetThreadManager().GetCurrentThread();
+                 parent.SaveContext(thread->context);
+                 GDBStub::Break();
+                 GDBStub::SendTrap(thread, 5);
+@@ -165,7 +165,7 @@ public:
+ 
+ ARM_Dynarmic::ARM_Dynarmic(Core::System& system, PrivilegeMode initial_mode)
+     : system(system), cb(std::make_unique<DynarmicUserCallbacks>(*this)) {
+-    interpreter_state = std::make_shared<ARMul_State>(initial_mode);
++    interpreter_state = std::make_shared<ARMul_State>(system, initial_mode);
+     PageTableChanged();
+ }
+ 
+-- 
+2.33.0
+

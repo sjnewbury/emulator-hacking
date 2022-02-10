@@ -1,0 +1,960 @@
+From 95790218f2a965cbdbc128795c78194a41f7ad5e Mon Sep 17 00:00:00 2001
+From: Weiyi Wang <wwylele@gmail.com>
+Date: Thu, 25 Oct 2018 10:27:42 -0400
+Subject: [PATCH 1/5] HLE: move config_mem to kernel
+
+ConfigMem is initialized in kernel and only used by kernel. It is also likely how it works on real 3DS
+---
+ src/core/CMakeLists.txt                  | 4 ++--
+ src/core/hle/{ => kernel}/config_mem.cpp | 2 +-
+ src/core/hle/{ => kernel}/config_mem.h   | 0
+ src/core/hle/kernel/kernel.cpp           | 2 +-
+ src/core/hle/kernel/memory.cpp           | 2 +-
+ src/core/hle/kernel/wait_object.cpp      | 1 -
+ 6 files changed, 5 insertions(+), 6 deletions(-)
+ rename src/core/hle/{ => kernel}/config_mem.cpp (95%)
+ rename src/core/hle/{ => kernel}/config_mem.h (100%)
+
+diff --git a/src/core/CMakeLists.txt b/src/core/CMakeLists.txt
+index 18833eb0ac3..23665568839 100644
+--- a/src/core/CMakeLists.txt
++++ b/src/core/CMakeLists.txt
+@@ -103,8 +103,6 @@ add_library(core STATIC
+     hle/applets/mint.h
+     hle/applets/swkbd.cpp
+     hle/applets/swkbd.h
+-    hle/config_mem.cpp
+-    hle/config_mem.h
+     hle/function_wrappers.h
+     hle/ipc.h
+     hle/ipc_helpers.h
+@@ -114,6 +112,8 @@ add_library(core STATIC
+     hle/kernel/client_port.h
+     hle/kernel/client_session.cpp
+     hle/kernel/client_session.h
++    hle/kernel/config_mem.cpp
++    hle/kernel/config_mem.h
+     hle/kernel/errors.h
+     hle/kernel/event.cpp
+     hle/kernel/event.h
+diff --git a/src/core/hle/config_mem.cpp b/src/core/hle/kernel/config_mem.cpp
+similarity index 95%
+rename from src/core/hle/config_mem.cpp
+rename to src/core/hle/kernel/config_mem.cpp
+index 038af79096f..91c044192a8 100644
+--- a/src/core/hle/config_mem.cpp
++++ b/src/core/hle/kernel/config_mem.cpp
+@@ -3,7 +3,7 @@
+ // Refer to the license.txt file included.
+ 
+ #include <cstring>
+-#include "core/hle/config_mem.h"
++#include "core/hle/kernel/config_mem.h"
+ 
+ ////////////////////////////////////////////////////////////////////////////////////////////////////
+ 
+diff --git a/src/core/hle/config_mem.h b/src/core/hle/kernel/config_mem.h
+similarity index 100%
+rename from src/core/hle/config_mem.h
+rename to src/core/hle/kernel/config_mem.h
+diff --git a/src/core/hle/kernel/kernel.cpp b/src/core/hle/kernel/kernel.cpp
+index c43029c3793..74b1f596af9 100644
+--- a/src/core/hle/kernel/kernel.cpp
++++ b/src/core/hle/kernel/kernel.cpp
+@@ -2,7 +2,7 @@
+ // Licensed under GPLv2 or any later version
+ // Refer to the license.txt file included.
+ 
+-#include "core/hle/config_mem.h"
++#include "core/hle/kernel/config_mem.h"
+ #include "core/hle/kernel/handle_table.h"
+ #include "core/hle/kernel/kernel.h"
+ #include "core/hle/kernel/memory.h"
+diff --git a/src/core/hle/kernel/memory.cpp b/src/core/hle/kernel/memory.cpp
+index 3615e0a55c1..ff4c06cab4b 100644
+--- a/src/core/hle/kernel/memory.cpp
++++ b/src/core/hle/kernel/memory.cpp
+@@ -12,7 +12,7 @@
+ #include "common/common_types.h"
+ #include "common/logging/log.h"
+ #include "core/core.h"
+-#include "core/hle/config_mem.h"
++#include "core/hle/kernel/config_mem.h"
+ #include "core/hle/kernel/memory.h"
+ #include "core/hle/kernel/vm_manager.h"
+ #include "core/hle/result.h"
+diff --git a/src/core/hle/kernel/wait_object.cpp b/src/core/hle/kernel/wait_object.cpp
+index 12699f85eab..17902d76c96 100644
+--- a/src/core/hle/kernel/wait_object.cpp
++++ b/src/core/hle/kernel/wait_object.cpp
+@@ -5,7 +5,6 @@
+ #include <algorithm>
+ #include "common/assert.h"
+ #include "common/logging/log.h"
+-#include "core/hle/config_mem.h"
+ #include "core/hle/kernel/errors.h"
+ #include "core/hle/kernel/kernel.h"
+ #include "core/hle/kernel/memory.h"
+
+From 773ec47629ccb46681d789667ddca8aea1f2537f Mon Sep 17 00:00:00 2001
+From: Weiyi Wang <wwylele@gmail.com>
+Date: Thu, 25 Oct 2018 10:51:00 -0400
+Subject: [PATCH 2/5] Kernel: make config_mem and MapSharedPages members of
+ KernelSystem
+
+---
+ src/core/hle/kernel/config_mem.cpp |  8 +++++---
+ src/core/hle/kernel/config_mem.h   |  9 +++++++--
+ src/core/hle/kernel/kernel.cpp     |  4 +---
+ src/core/hle/kernel/kernel.h       | 11 +++++++++++
+ src/core/hle/kernel/memory.cpp     | 18 ++++++++++--------
+ src/core/hle/kernel/memory.h       |  2 --
+ src/core/hle/kernel/process.cpp    |  2 +-
+ src/tests/core/memory/memory.cpp   |  4 ++--
+ 8 files changed, 37 insertions(+), 21 deletions(-)
+
+diff --git a/src/core/hle/kernel/config_mem.cpp b/src/core/hle/kernel/config_mem.cpp
+index 91c044192a8..58bef4110b9 100644
+--- a/src/core/hle/kernel/config_mem.cpp
++++ b/src/core/hle/kernel/config_mem.cpp
+@@ -9,9 +9,7 @@
+ 
+ namespace ConfigMem {
+ 
+-ConfigMemDef config_mem;
+-
+-void Init() {
++Handler::Handler() {
+     std::memset(&config_mem, 0, sizeof(config_mem));
+ 
+     // Values extracted from firmware 11.2.0-35E
+@@ -28,4 +26,8 @@ void Init() {
+     config_mem.firm_ctr_sdk_ver = 0x0000F297;
+ }
+ 
++ConfigMemDef& Handler::GetConfigMem() {
++    return config_mem;
++}
++
+ } // namespace ConfigMem
+diff --git a/src/core/hle/kernel/config_mem.h b/src/core/hle/kernel/config_mem.h
+index 1840d176091..ecb97c6bd21 100644
+--- a/src/core/hle/kernel/config_mem.h
++++ b/src/core/hle/kernel/config_mem.h
+@@ -49,8 +49,13 @@ struct ConfigMemDef {
+ static_assert(sizeof(ConfigMemDef) == Memory::CONFIG_MEMORY_SIZE,
+               "Config Memory structure size is wrong");
+ 
+-extern ConfigMemDef config_mem;
++class Handler {
++public:
++    Handler();
++    ConfigMemDef& GetConfigMem();
+ 
+-void Init();
++private:
++    ConfigMemDef config_mem;
++};
+ 
+ } // namespace ConfigMem
+diff --git a/src/core/hle/kernel/kernel.cpp b/src/core/hle/kernel/kernel.cpp
+index 74b1f596af9..e491dfa5069 100644
+--- a/src/core/hle/kernel/kernel.cpp
++++ b/src/core/hle/kernel/kernel.cpp
+@@ -16,9 +16,7 @@ namespace Kernel {
+ 
+ /// Initialize the kernel
+ KernelSystem::KernelSystem(u32 system_mode) {
+-    ConfigMem::Init();
+-
+-    Kernel::MemoryInit(system_mode);
++    MemoryInit(system_mode);
+ 
+     resource_limits = std::make_unique<ResourceLimitList>(*this);
+     thread_manager = std::make_unique<ThreadManager>();
+diff --git a/src/core/hle/kernel/kernel.h b/src/core/hle/kernel/kernel.h
+index 5d27b2df71b..e001fa8b7d4 100644
+--- a/src/core/hle/kernel/kernel.h
++++ b/src/core/hle/kernel/kernel.h
+@@ -12,6 +12,10 @@
+ #include "common/common_types.h"
+ #include "core/hle/result.h"
+ 
++namespace ConfigMem {
++class Handler;
++}
++
+ namespace Kernel {
+ 
+ class AddressArbiter;
+@@ -30,6 +34,7 @@ class ResourceLimitList;
+ class SharedMemory;
+ class ThreadManager;
+ class TimerManager;
++class VMManager;
+ 
+ enum class ResetType {
+     OneShot,
+@@ -195,7 +200,11 @@ class KernelSystem {
+     TimerManager& GetTimerManager();
+     const TimerManager& GetTimerManager() const;
+ 
++    void MapSharedPages(VMManager& address_space);
++
+ private:
++    void MemoryInit(u32 mem_type);
++
+     std::unique_ptr<ResourceLimitList> resource_limits;
+     std::atomic<u32> next_object_id{0};
+ 
+@@ -210,6 +219,8 @@ class KernelSystem {
+ 
+     std::unique_ptr<ThreadManager> thread_manager;
+     std::unique_ptr<TimerManager> timer_manager;
++
++    std::unique_ptr<ConfigMem::Handler> config_mem_handler;
+ };
+ 
+ } // namespace Kernel
+diff --git a/src/core/hle/kernel/memory.cpp b/src/core/hle/kernel/memory.cpp
+index ff4c06cab4b..e8c3265699f 100644
+--- a/src/core/hle/kernel/memory.cpp
++++ b/src/core/hle/kernel/memory.cpp
+@@ -41,7 +41,7 @@ static const u32 memory_region_sizes[8][3] = {
+     {0x0B200000, 0x02E00000, 0x02000000}, // 7
+ };
+ 
+-void MemoryInit(u32 mem_type) {
++void KernelSystem::MemoryInit(u32 mem_type) {
+     // TODO(yuriks): On the n3DS, all o3DS configurations (<=5) are forced to 6 instead.
+     ASSERT_MSG(mem_type <= 5, "New 3DS memory configuration aren't supported yet!");
+     ASSERT(mem_type != 1);
+@@ -64,7 +64,8 @@ void MemoryInit(u32 mem_type) {
+     // We must've allocated the entire FCRAM by the end
+     ASSERT(base == Memory::FCRAM_SIZE);
+ 
+-    using ConfigMem::config_mem;
++    config_mem_handler = std::make_unique<ConfigMem::Handler>();
++    auto& config_mem = config_mem_handler->GetConfigMem();
+     config_mem.app_mem_type = mem_type;
+     // app_mem_malloc does not always match the configured size for memory_region[0]: in case the
+     // n3DS type override is in effect it reports the size the game expects, not the real one.
+@@ -152,12 +153,13 @@ void HandleSpecialMapping(VMManager& address_space, const AddressMapping& mappin
+                             mapping.read_only ? VMAPermission::Read : VMAPermission::ReadWrite);
+ }
+ 
+-void MapSharedPages(VMManager& address_space) {
+-    auto cfg_mem_vma = address_space
+-                           .MapBackingMemory(Memory::CONFIG_MEMORY_VADDR,
+-                                             reinterpret_cast<u8*>(&ConfigMem::config_mem),
+-                                             Memory::CONFIG_MEMORY_SIZE, MemoryState::Shared)
+-                           .Unwrap();
++void KernelSystem::MapSharedPages(VMManager& address_space) {
++    auto cfg_mem_vma =
++        address_space
++            .MapBackingMemory(Memory::CONFIG_MEMORY_VADDR,
++                              reinterpret_cast<u8*>(&config_mem_handler->GetConfigMem()),
++                              Memory::CONFIG_MEMORY_SIZE, MemoryState::Shared)
++            .Unwrap();
+     address_space.Reprotect(cfg_mem_vma, VMAPermission::Read);
+ 
+     auto shared_page_vma =
+diff --git a/src/core/hle/kernel/memory.h b/src/core/hle/kernel/memory.h
+index da6bb356339..a39a5397777 100644
+--- a/src/core/hle/kernel/memory.h
++++ b/src/core/hle/kernel/memory.h
+@@ -20,12 +20,10 @@ struct MemoryRegionInfo {
+     std::shared_ptr<std::vector<u8>> linear_heap_memory;
+ };
+ 
+-void MemoryInit(u32 mem_type);
+ void MemoryShutdown();
+ MemoryRegionInfo* GetMemoryRegion(MemoryRegion region);
+ 
+ void HandleSpecialMapping(VMManager& address_space, const AddressMapping& mapping);
+-void MapSharedPages(VMManager& address_space);
+ 
+ extern MemoryRegionInfo memory_regions[3];
+ } // namespace Kernel
+diff --git a/src/core/hle/kernel/process.cpp b/src/core/hle/kernel/process.cpp
+index 21204eeb882..9b45c77f1f0 100644
+--- a/src/core/hle/kernel/process.cpp
++++ b/src/core/hle/kernel/process.cpp
+@@ -143,7 +143,7 @@ void Process::Run(s32 main_thread_priority, u32 stack_size) {
+     memory_region->used += stack_size;
+ 
+     // Map special address mappings
+-    MapSharedPages(vm_manager);
++    kernel.MapSharedPages(vm_manager);
+     for (const auto& mapping : address_mappings) {
+         HandleSpecialMapping(vm_manager, mapping);
+     }
+diff --git a/src/tests/core/memory/memory.cpp b/src/tests/core/memory/memory.cpp
+index d5f96e1f2c8..de184800728 100644
+--- a/src/tests/core/memory/memory.cpp
++++ b/src/tests/core/memory/memory.cpp
+@@ -25,7 +25,7 @@ TEST_CASE("Memory::IsValidVirtualAddress", "[core][memory]") {
+ 
+     SECTION("CONFIG_MEMORY_VADDR and SHARED_PAGE_VADDR should be valid after mapping them") {
+         auto process = kernel.CreateProcess(kernel.CreateCodeSet("", 0));
+-        Kernel::MapSharedPages(process->vm_manager);
++        kernel.MapSharedPages(process->vm_manager);
+         CHECK(Memory::IsValidVirtualAddress(*process, Memory::CONFIG_MEMORY_VADDR) == true);
+         CHECK(Memory::IsValidVirtualAddress(*process, Memory::SHARED_PAGE_VADDR) == true);
+     }
+@@ -47,7 +47,7 @@ TEST_CASE("Memory::IsValidVirtualAddress", "[core][memory]") {
+ 
+     SECTION("Unmapping a VAddr should make it invalid") {
+         auto process = kernel.CreateProcess(kernel.CreateCodeSet("", 0));
+-        Kernel::MapSharedPages(process->vm_manager);
++        kernel.MapSharedPages(process->vm_manager);
+         process->vm_manager.UnmapRange(Memory::CONFIG_MEMORY_VADDR, Memory::CONFIG_MEMORY_SIZE);
+         CHECK(Memory::IsValidVirtualAddress(*process, Memory::CONFIG_MEMORY_VADDR) == false);
+     }
+
+From 263290d48caa86f1149e6f2f9a570a36188362c2 Mon Sep 17 00:00:00 2001
+From: Weiyi Wang <wwylele@gmail.com>
+Date: Thu, 25 Oct 2018 11:23:52 -0400
+Subject: [PATCH 3/5] HLE: move SharedPage into Kernel
+
+similar to config_mem, kernel is responsible for setting up this
+---
+ src/core/CMakeLists.txt                   |  4 ++--
+ src/core/core.cpp                         |  1 -
+ src/core/core.h                           |  8 --------
+ src/core/hle/kernel/kernel.cpp            | 10 +++++++++-
+ src/core/hle/kernel/kernel.h              |  8 ++++++++
+ src/core/hle/kernel/memory.cpp            | 11 ++++++-----
+ src/core/hle/{ => kernel}/shared_page.cpp |  2 +-
+ src/core/hle/{ => kernel}/shared_page.h   |  0
+ src/core/hle/kernel/wait_object.cpp       |  1 -
+ src/core/hle/service/gsp/gsp_gpu.cpp      |  3 ++-
+ src/core/hle/service/nwm/nwm_uds.cpp      |  5 +++--
+ src/tests/core/memory/memory.cpp          |  2 +-
+ 12 files changed, 32 insertions(+), 23 deletions(-)
+ rename src/core/hle/{ => kernel}/shared_page.cpp (99%)
+ rename src/core/hle/{ => kernel}/shared_page.h (100%)
+
+diff --git a/src/core/CMakeLists.txt b/src/core/CMakeLists.txt
+index 23665568839..2ccdaea2756 100644
+--- a/src/core/CMakeLists.txt
++++ b/src/core/CMakeLists.txt
+@@ -144,6 +144,8 @@ add_library(core STATIC
+     hle/kernel/session.h
+     hle/kernel/shared_memory.cpp
+     hle/kernel/shared_memory.h
++    hle/kernel/shared_page.cpp
++    hle/kernel/shared_page.h
+     hle/kernel/svc.cpp
+     hle/kernel/svc.h
+     hle/kernel/thread.cpp
+@@ -386,8 +388,6 @@ add_library(core STATIC
+     hle/service/ssl_c.h
+     hle/service/y2r_u.cpp
+     hle/service/y2r_u.h
+-    hle/shared_page.cpp
+-    hle/shared_page.h
+     hw/aes/arithmetic128.cpp
+     hw/aes/arithmetic128.h
+     hw/aes/ccm.cpp
+diff --git a/src/core/core.cpp b/src/core/core.cpp
+index be9796aeb24..a06a9b5491c 100644
+--- a/src/core/core.cpp
++++ b/src/core/core.cpp
+@@ -194,7 +194,6 @@ System::ResultStatus System::Init(EmuWindow& emu_window, u32 system_mode) {
+ #endif
+ 
+     service_manager = std::make_shared<Service::SM::ServiceManager>(*this);
+-    shared_page_handler = std::make_shared<SharedPage::Handler>();
+     archive_manager = std::make_unique<Service::FS::ArchiveManager>(*this);
+ 
+     HW::Init();
+diff --git a/src/core/core.h b/src/core/core.h
+index ea986f433a6..0cb53475fba 100644
+--- a/src/core/core.h
++++ b/src/core/core.h
+@@ -8,7 +8,6 @@
+ #include <string>
+ #include "common/common_types.h"
+ #include "core/frontend/applets/swkbd.h"
+-#include "core/hle/shared_page.h"
+ #include "core/loader/loader.h"
+ #include "core/memory.h"
+ #include "core/perf_stats.h"
+@@ -203,10 +202,6 @@ class System {
+         return registered_swkbd;
+     }
+ 
+-    std::shared_ptr<SharedPage::Handler> GetSharedPageHandler() const {
+-        return shared_page_handler;
+-    }
+-
+ private:
+     /**
+      * Initialize the emulated system.
+@@ -246,9 +241,6 @@ class System {
+     std::unique_ptr<RPC::RPCServer> rpc_server;
+ #endif
+ 
+-    /// Shared Page
+-    std::shared_ptr<SharedPage::Handler> shared_page_handler;
+-
+     std::unique_ptr<Service::FS::ArchiveManager> archive_manager;
+ 
+ public: // HACK: this is temporary exposed for tests,
+diff --git a/src/core/hle/kernel/kernel.cpp b/src/core/hle/kernel/kernel.cpp
+index e491dfa5069..8b5621ca68a 100644
+--- a/src/core/hle/kernel/kernel.cpp
++++ b/src/core/hle/kernel/kernel.cpp
+@@ -8,9 +8,9 @@
+ #include "core/hle/kernel/memory.h"
+ #include "core/hle/kernel/process.h"
+ #include "core/hle/kernel/resource_limit.h"
++#include "core/hle/kernel/shared_page.h"
+ #include "core/hle/kernel/thread.h"
+ #include "core/hle/kernel/timer.h"
+-#include "core/hle/shared_page.h"
+ 
+ namespace Kernel {
+ 
+@@ -64,4 +64,12 @@ const TimerManager& KernelSystem::GetTimerManager() const {
+     return *timer_manager;
+ }
+ 
++SharedPage::Handler& KernelSystem::GetSharedPageHandler() {
++    return *shared_page_handler;
++}
++
++const SharedPage::Handler& KernelSystem::GetSharedPageHandler() const {
++    return *shared_page_handler;
++}
++
+ } // namespace Kernel
+diff --git a/src/core/hle/kernel/kernel.h b/src/core/hle/kernel/kernel.h
+index e001fa8b7d4..69e7fdbd971 100644
+--- a/src/core/hle/kernel/kernel.h
++++ b/src/core/hle/kernel/kernel.h
+@@ -16,6 +16,10 @@ namespace ConfigMem {
+ class Handler;
+ }
+ 
++namespace SharedPage {
++class Handler;
++}
++
+ namespace Kernel {
+ 
+ class AddressArbiter;
+@@ -202,6 +206,9 @@ class KernelSystem {
+ 
+     void MapSharedPages(VMManager& address_space);
+ 
++    SharedPage::Handler& GetSharedPageHandler();
++    const SharedPage::Handler& GetSharedPageHandler() const;
++
+ private:
+     void MemoryInit(u32 mem_type);
+ 
+@@ -221,6 +228,7 @@ class KernelSystem {
+     std::unique_ptr<TimerManager> timer_manager;
+ 
+     std::unique_ptr<ConfigMem::Handler> config_mem_handler;
++    std::unique_ptr<SharedPage::Handler> shared_page_handler;
+ };
+ 
+ } // namespace Kernel
+diff --git a/src/core/hle/kernel/memory.cpp b/src/core/hle/kernel/memory.cpp
+index e8c3265699f..caa30c8379a 100644
+--- a/src/core/hle/kernel/memory.cpp
++++ b/src/core/hle/kernel/memory.cpp
+@@ -14,6 +14,7 @@
+ #include "core/core.h"
+ #include "core/hle/kernel/config_mem.h"
+ #include "core/hle/kernel/memory.h"
++#include "core/hle/kernel/shared_page.h"
+ #include "core/hle/kernel/vm_manager.h"
+ #include "core/hle/result.h"
+ #include "core/memory.h"
+@@ -72,6 +73,8 @@ void KernelSystem::MemoryInit(u32 mem_type) {
+     config_mem.app_mem_alloc = memory_region_sizes[mem_type][0];
+     config_mem.sys_mem_alloc = memory_regions[1].size;
+     config_mem.base_mem_alloc = memory_regions[2].size;
++
++    shared_page_handler = std::make_unique<SharedPage::Handler>();
+ }
+ 
+ void MemoryShutdown() {
+@@ -164,11 +167,9 @@ void KernelSystem::MapSharedPages(VMManager& address_space) {
+ 
+     auto shared_page_vma =
+         address_space
+-            .MapBackingMemory(
+-                Memory::SHARED_PAGE_VADDR,
+-                reinterpret_cast<u8*>(
+-                    &Core::System::GetInstance().GetSharedPageHandler()->GetSharedPage()),
+-                Memory::SHARED_PAGE_SIZE, MemoryState::Shared)
++            .MapBackingMemory(Memory::SHARED_PAGE_VADDR,
++                              reinterpret_cast<u8*>(&shared_page_handler->GetSharedPage()),
++                              Memory::SHARED_PAGE_SIZE, MemoryState::Shared)
+             .Unwrap();
+     address_space.Reprotect(shared_page_vma, VMAPermission::Read);
+ }
+diff --git a/src/core/hle/shared_page.cpp b/src/core/hle/kernel/shared_page.cpp
+similarity index 99%
+rename from src/core/hle/shared_page.cpp
+rename to src/core/hle/kernel/shared_page.cpp
+index 962293609c4..831782458ac 100644
+--- a/src/core/hle/shared_page.cpp
++++ b/src/core/hle/kernel/shared_page.cpp
+@@ -5,8 +5,8 @@
+ #include <chrono>
+ #include <cstring>
+ #include "core/core_timing.h"
++#include "core/hle/kernel/shared_page.h"
+ #include "core/hle/service/ptm/ptm.h"
+-#include "core/hle/shared_page.h"
+ #include "core/movie.h"
+ #include "core/settings.h"
+ 
+diff --git a/src/core/hle/shared_page.h b/src/core/hle/kernel/shared_page.h
+similarity index 100%
+rename from src/core/hle/shared_page.h
+rename to src/core/hle/kernel/shared_page.h
+diff --git a/src/core/hle/kernel/wait_object.cpp b/src/core/hle/kernel/wait_object.cpp
+index 17902d76c96..d64b7def766 100644
+--- a/src/core/hle/kernel/wait_object.cpp
++++ b/src/core/hle/kernel/wait_object.cpp
+@@ -12,7 +12,6 @@
+ #include "core/hle/kernel/resource_limit.h"
+ #include "core/hle/kernel/thread.h"
+ #include "core/hle/kernel/timer.h"
+-#include "core/hle/shared_page.h"
+ 
+ namespace Kernel {
+ 
+diff --git a/src/core/hle/service/gsp/gsp_gpu.cpp b/src/core/hle/service/gsp/gsp_gpu.cpp
+index a6b4826e2bf..8ed79ebca77 100644
+--- a/src/core/hle/service/gsp/gsp_gpu.cpp
++++ b/src/core/hle/service/gsp/gsp_gpu.cpp
+@@ -11,6 +11,7 @@
+ #include "core/hle/ipc_helpers.h"
+ #include "core/hle/kernel/handle_table.h"
+ #include "core/hle/kernel/shared_memory.h"
++#include "core/hle/kernel/shared_page.h"
+ #include "core/hle/result.h"
+ #include "core/hle/service/gsp/gsp_gpu.h"
+ #include "core/hw/gpu.h"
+@@ -731,7 +732,7 @@ void GSP_GPU::SetLedForceOff(Kernel::HLERequestContext& ctx) {
+ 
+     u8 state = rp.Pop<u8>();
+ 
+-    system.GetSharedPageHandler()->Set3DLed(state);
++    system.Kernel().GetSharedPageHandler().Set3DLed(state);
+ 
+     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+     rb.Push(RESULT_SUCCESS);
+diff --git a/src/core/hle/service/nwm/nwm_uds.cpp b/src/core/hle/service/nwm/nwm_uds.cpp
+index 735f485a838..92d712263e8 100644
+--- a/src/core/hle/service/nwm/nwm_uds.cpp
++++ b/src/core/hle/service/nwm/nwm_uds.cpp
+@@ -20,6 +20,7 @@
+ #include "core/hle/ipc_helpers.h"
+ #include "core/hle/kernel/event.h"
+ #include "core/hle/kernel/shared_memory.h"
++#include "core/hle/kernel/shared_page.h"
+ #include "core/hle/lock.h"
+ #include "core/hle/result.h"
+ #include "core/hle/service/nwm/nwm_uds.h"
+@@ -1407,8 +1408,8 @@ NWM_UDS::NWM_UDS(Core::System& system) : ServiceFramework("nwm::UDS"), system(sy
+         }
+     }
+ 
+-    system.GetSharedPageHandler()->SetMacAddress(mac);
+-    system.GetSharedPageHandler()->SetWifiLinkLevel(SharedPage::WifiLinkLevel::BEST);
++    system.Kernel().GetSharedPageHandler().SetMacAddress(mac);
++    system.Kernel().GetSharedPageHandler().SetWifiLinkLevel(SharedPage::WifiLinkLevel::BEST);
+ }
+ 
+ NWM_UDS::~NWM_UDS() {
+diff --git a/src/tests/core/memory/memory.cpp b/src/tests/core/memory/memory.cpp
+index de184800728..150ec8f66be 100644
+--- a/src/tests/core/memory/memory.cpp
++++ b/src/tests/core/memory/memory.cpp
+@@ -6,7 +6,7 @@
+ #include "core/core_timing.h"
+ #include "core/hle/kernel/memory.h"
+ #include "core/hle/kernel/process.h"
+-#include "core/hle/shared_page.h"
++#include "core/hle/kernel/shared_page.h"
+ #include "core/memory.h"
+ 
+ TEST_CASE("Memory::IsValidVirtualAddress", "[core][memory]") {
+
+From ece96807c4bbf65f0a0a57987e3086442d4b53dd Mon Sep 17 00:00:00 2001
+From: Weiyi Wang <wwylele@gmail.com>
+Date: Thu, 25 Oct 2018 21:07:15 -0400
+Subject: [PATCH 4/5] Kernel: move memory_regions into Kernel instance
+
+---
+ src/core/hle/kernel/kernel.cpp  |  4 +---
+ src/core/hle/kernel/kernel.h    |  6 ++++++
+ src/core/hle/kernel/memory.cpp  | 14 ++------------
+ src/core/hle/kernel/memory.h    |  7 ++-----
+ src/core/hle/kernel/process.cpp |  2 +-
+ src/core/hle/kernel/svc.cpp     | 14 ++++++++------
+ src/core/memory.cpp             |  2 +-
+ 7 files changed, 21 insertions(+), 28 deletions(-)
+
+diff --git a/src/core/hle/kernel/kernel.cpp b/src/core/hle/kernel/kernel.cpp
+index 8b5621ca68a..704b7b709d4 100644
+--- a/src/core/hle/kernel/kernel.cpp
++++ b/src/core/hle/kernel/kernel.cpp
+@@ -24,9 +24,7 @@ KernelSystem::KernelSystem(u32 system_mode) {
+ }
+ 
+ /// Shutdown the kernel
+-KernelSystem::~KernelSystem() {
+-    Kernel::MemoryShutdown();
+-}
++KernelSystem::~KernelSystem() = default;
+ 
+ ResourceLimitList& KernelSystem::ResourceLimit() {
+     return *resource_limits;
+diff --git a/src/core/hle/kernel/kernel.h b/src/core/hle/kernel/kernel.h
+index 69e7fdbd971..7d7560e5061 100644
+--- a/src/core/hle/kernel/kernel.h
++++ b/src/core/hle/kernel/kernel.h
+@@ -4,12 +4,14 @@
+ 
+ #pragma once
+ 
++#include <array>
+ #include <atomic>
+ #include <memory>
+ #include <string>
+ #include <vector>
+ #include <boost/smart_ptr/intrusive_ptr.hpp>
+ #include "common/common_types.h"
++#include "core/hle/kernel/memory.h"
+ #include "core/hle/result.h"
+ 
+ namespace ConfigMem {
+@@ -209,6 +211,10 @@ class KernelSystem {
+     SharedPage::Handler& GetSharedPageHandler();
+     const SharedPage::Handler& GetSharedPageHandler() const;
+ 
++    MemoryRegionInfo* GetMemoryRegion(MemoryRegion region);
++
++    std::array<MemoryRegionInfo, 3> memory_regions;
++
+ private:
+     void MemoryInit(u32 mem_type);
+ 
+diff --git a/src/core/hle/kernel/memory.cpp b/src/core/hle/kernel/memory.cpp
+index caa30c8379a..3a2e9957a51 100644
+--- a/src/core/hle/kernel/memory.cpp
++++ b/src/core/hle/kernel/memory.cpp
+@@ -14,6 +14,7 @@
+ #include "core/core.h"
+ #include "core/hle/kernel/config_mem.h"
+ #include "core/hle/kernel/memory.h"
++#include "core/hle/kernel/process.h"
+ #include "core/hle/kernel/shared_page.h"
+ #include "core/hle/kernel/vm_manager.h"
+ #include "core/hle/result.h"
+@@ -24,8 +25,6 @@
+ 
+ namespace Kernel {
+ 
+-MemoryRegionInfo memory_regions[3];
+-
+ /// Size of the APPLICATION, SYSTEM and BASE memory regions (respectively) for each system
+ /// memory configuration type.
+ static const u32 memory_region_sizes[8][3] = {
+@@ -77,16 +76,7 @@ void KernelSystem::MemoryInit(u32 mem_type) {
+     shared_page_handler = std::make_unique<SharedPage::Handler>();
+ }
+ 
+-void MemoryShutdown() {
+-    for (auto& region : memory_regions) {
+-        region.base = 0;
+-        region.size = 0;
+-        region.used = 0;
+-        region.linear_heap_memory = nullptr;
+-    }
+-}
+-
+-MemoryRegionInfo* GetMemoryRegion(MemoryRegion region) {
++MemoryRegionInfo* KernelSystem::GetMemoryRegion(MemoryRegion region) {
+     switch (region) {
+     case MemoryRegion::APPLICATION:
+         return &memory_regions[0];
+diff --git a/src/core/hle/kernel/memory.h b/src/core/hle/kernel/memory.h
+index a39a5397777..14a38bdb99b 100644
+--- a/src/core/hle/kernel/memory.h
++++ b/src/core/hle/kernel/memory.h
+@@ -5,11 +5,12 @@
+ #pragma once
+ 
+ #include <memory>
++#include <vector>
+ #include "common/common_types.h"
+-#include "core/hle/kernel/process.h"
+ 
+ namespace Kernel {
+ 
++struct AddressMapping;
+ class VMManager;
+ 
+ struct MemoryRegionInfo {
+@@ -20,10 +21,6 @@ struct MemoryRegionInfo {
+     std::shared_ptr<std::vector<u8>> linear_heap_memory;
+ };
+ 
+-void MemoryShutdown();
+-MemoryRegionInfo* GetMemoryRegion(MemoryRegion region);
+-
+ void HandleSpecialMapping(VMManager& address_space, const AddressMapping& mapping);
+ 
+-extern MemoryRegionInfo memory_regions[3];
+ } // namespace Kernel
+diff --git a/src/core/hle/kernel/process.cpp b/src/core/hle/kernel/process.cpp
+index 9b45c77f1f0..c41d4ebd99f 100644
+--- a/src/core/hle/kernel/process.cpp
++++ b/src/core/hle/kernel/process.cpp
+@@ -115,7 +115,7 @@ void Process::ParseKernelCaps(const u32* kernel_caps, std::size_t len) {
+ }
+ 
+ void Process::Run(s32 main_thread_priority, u32 stack_size) {
+-    memory_region = GetMemoryRegion(flags.memory_region);
++    memory_region = kernel.GetMemoryRegion(flags.memory_region);
+ 
+     auto MapSegment = [&](CodeSet::Segment& segment, VMAPermission permissions,
+                           MemoryState memory_state) {
+diff --git a/src/core/hle/kernel/svc.cpp b/src/core/hle/kernel/svc.cpp
+index 07079fc4d9d..9dc6f270081 100644
+--- a/src/core/hle/kernel/svc.cpp
++++ b/src/core/hle/kernel/svc.cpp
+@@ -1233,22 +1233,24 @@ static ResultCode AcceptSession(Handle* out_server_session, Handle server_port_h
+ static ResultCode GetSystemInfo(s64* out, u32 type, s32 param) {
+     LOG_TRACE(Kernel_SVC, "called type={} param={}", type, param);
+ 
++    KernelSystem& kernel = Core::System::GetInstance().Kernel();
++
+     switch ((SystemInfoType)type) {
+     case SystemInfoType::REGION_MEMORY_USAGE:
+         switch ((SystemInfoMemUsageRegion)param) {
+         case SystemInfoMemUsageRegion::ALL:
+-            *out = GetMemoryRegion(MemoryRegion::APPLICATION)->used +
+-                   GetMemoryRegion(MemoryRegion::SYSTEM)->used +
+-                   GetMemoryRegion(MemoryRegion::BASE)->used;
++            *out = kernel.GetMemoryRegion(MemoryRegion::APPLICATION)->used +
++                   kernel.GetMemoryRegion(MemoryRegion::SYSTEM)->used +
++                   kernel.GetMemoryRegion(MemoryRegion::BASE)->used;
+             break;
+         case SystemInfoMemUsageRegion::APPLICATION:
+-            *out = GetMemoryRegion(MemoryRegion::APPLICATION)->used;
++            *out = kernel.GetMemoryRegion(MemoryRegion::APPLICATION)->used;
+             break;
+         case SystemInfoMemUsageRegion::SYSTEM:
+-            *out = GetMemoryRegion(MemoryRegion::SYSTEM)->used;
++            *out = kernel.GetMemoryRegion(MemoryRegion::SYSTEM)->used;
+             break;
+         case SystemInfoMemUsageRegion::BASE:
+-            *out = GetMemoryRegion(MemoryRegion::BASE)->used;
++            *out = kernel.GetMemoryRegion(MemoryRegion::BASE)->used;
+             break;
+         default:
+             LOG_ERROR(Kernel_SVC, "unknown GetSystemInfo type=0 region: param={}", param);
+diff --git a/src/core/memory.cpp b/src/core/memory.cpp
+index 0054dc75eef..eed279c9a46 100644
+--- a/src/core/memory.cpp
++++ b/src/core/memory.cpp
+@@ -305,7 +305,7 @@ u8* GetPhysicalPointer(PAddr address) {
+         target_pointer = Core::DSP().GetDspMemory().data() + offset_into_region;
+         break;
+     case FCRAM_PADDR:
+-        for (const auto& region : Kernel::memory_regions) {
++        for (const auto& region : Core::System::GetInstance().Kernel().memory_regions) {
+             if (offset_into_region >= region.base &&
+                 offset_into_region < region.base + region.size) {
+                 target_pointer =
+
+From fc84091d88ce131be7cbb143b4cd458bb0d1da51 Mon Sep 17 00:00:00 2001
+From: Weiyi Wang <wwylele@gmail.com>
+Date: Fri, 26 Oct 2018 10:27:13 -0400
+Subject: [PATCH 5/5] Service, Kernel: move named port list to kernel
+
+---
+ src/core/core.cpp                |  1 -
+ src/core/hle/kernel/kernel.cpp   |  5 +++++
+ src/core/hle/kernel/kernel.h     |  7 +++++++
+ src/core/hle/kernel/svc.cpp      | 10 +++++-----
+ src/core/hle/service/service.cpp | 15 +--------------
+ src/core/hle/service/service.h   | 10 ----------
+ 6 files changed, 18 insertions(+), 30 deletions(-)
+
+diff --git a/src/core/core.cpp b/src/core/core.cpp
+index a06a9b5491c..78585380c78 100644
+--- a/src/core/core.cpp
++++ b/src/core/core.cpp
+@@ -256,7 +256,6 @@ void System::Shutdown() {
+     // Shutdown emulation session
+     GDBStub::Shutdown();
+     VideoCore::Shutdown();
+-    Service::Shutdown();
+     kernel.reset();
+     HW::Shutdown();
+     telemetry_session.reset();
+diff --git a/src/core/hle/kernel/kernel.cpp b/src/core/hle/kernel/kernel.cpp
+index 704b7b709d4..1c174d2ea22 100644
+--- a/src/core/hle/kernel/kernel.cpp
++++ b/src/core/hle/kernel/kernel.cpp
+@@ -2,6 +2,7 @@
+ // Licensed under GPLv2 or any later version
+ // Refer to the license.txt file included.
+ 
++#include "core/hle/kernel/client_port.h"
+ #include "core/hle/kernel/config_mem.h"
+ #include "core/hle/kernel/handle_table.h"
+ #include "core/hle/kernel/kernel.h"
+@@ -70,4 +71,8 @@ const SharedPage::Handler& KernelSystem::GetSharedPageHandler() const {
+     return *shared_page_handler;
+ }
+ 
++void KernelSystem::AddNamedPort(std::string name, SharedPtr<ClientPort> port) {
++    named_ports.emplace(std::move(name), std::move(port));
++}
++
+ } // namespace Kernel
+diff --git a/src/core/hle/kernel/kernel.h b/src/core/hle/kernel/kernel.h
+index 7d7560e5061..f010cd388d4 100644
+--- a/src/core/hle/kernel/kernel.h
++++ b/src/core/hle/kernel/kernel.h
+@@ -8,6 +8,7 @@
+ #include <atomic>
+ #include <memory>
+ #include <string>
++#include <unordered_map>
+ #include <vector>
+ #include <boost/smart_ptr/intrusive_ptr.hpp>
+ #include "common/common_types.h"
+@@ -215,6 +216,12 @@ class KernelSystem {
+ 
+     std::array<MemoryRegionInfo, 3> memory_regions;
+ 
++    /// Adds a port to the named port table
++    void AddNamedPort(std::string name, SharedPtr<ClientPort> port);
++
++    /// Map of named ports managed by the kernel, which can be retrieved using the ConnectToPort
++    std::unordered_map<std::string, SharedPtr<ClientPort>> named_ports;
++
+ private:
+     void MemoryInit(u32 mem_type);
+ 
+diff --git a/src/core/hle/kernel/svc.cpp b/src/core/hle/kernel/svc.cpp
+index 9dc6f270081..f23b569d700 100644
+--- a/src/core/hle/kernel/svc.cpp
++++ b/src/core/hle/kernel/svc.cpp
+@@ -235,8 +235,10 @@ static ResultCode ConnectToPort(Handle* out_handle, VAddr port_name_address) {
+ 
+     LOG_TRACE(Kernel_SVC, "called port_name={}", port_name);
+ 
+-    auto it = Service::g_kernel_named_ports.find(port_name);
+-    if (it == Service::g_kernel_named_ports.end()) {
++    KernelSystem& kernel = Core::System::GetInstance().Kernel();
++
++    auto it = kernel.named_ports.find(port_name);
++    if (it == kernel.named_ports.end()) {
+         LOG_WARNING(Kernel_SVC, "tried to connect to unknown port: {}", port_name);
+         return ERR_NOT_FOUND;
+     }
+@@ -247,9 +249,7 @@ static ResultCode ConnectToPort(Handle* out_handle, VAddr port_name_address) {
+     CASCADE_RESULT(client_session, client_port->Connect());
+ 
+     // Return the client session
+-    CASCADE_RESULT(*out_handle,
+-                   Core::System::GetInstance().Kernel().GetCurrentProcess()->handle_table.Create(
+-                       client_session));
++    CASCADE_RESULT(*out_handle, kernel.GetCurrentProcess()->handle_table.Create(client_session));
+     return RESULT_SUCCESS;
+ }
+ 
+diff --git a/src/core/hle/service/service.cpp b/src/core/hle/service/service.cpp
+index 2402a786d71..d4112fc21fc 100644
+--- a/src/core/hle/service/service.cpp
++++ b/src/core/hle/service/service.cpp
+@@ -61,8 +61,6 @@ using Kernel::SharedPtr;
+ 
+ namespace Service {
+ 
+-std::unordered_map<std::string, SharedPtr<ClientPort>> g_kernel_named_ports;
+-
+ const std::array<ServiceModuleInfo, 40> service_module_map{
+     {{"FS", 0x00040130'00001102, FS::InstallInterfaces},
+      {"PM", 0x00040130'00001202, PM::InstallInterfaces},
+@@ -149,7 +147,7 @@ void ServiceFrameworkBase::InstallAsNamedPort(Kernel::KernelSystem& kernel) {
+     SharedPtr<ClientPort> client_port;
+     std::tie(server_port, client_port) = kernel.CreatePortPair(max_sessions, service_name);
+     server_port->SetHleHandler(shared_from_this());
+-    AddNamedPort(service_name, std::move(client_port));
++    kernel.AddNamedPort(service_name, std::move(client_port));
+ }
+ 
+ void ServiceFrameworkBase::RegisterHandlersBase(const FunctionInfoBase* functions, std::size_t n) {
+@@ -214,11 +212,6 @@ void ServiceFrameworkBase::HandleSyncRequest(SharedPtr<ServerSession> server_ses
+ ////////////////////////////////////////////////////////////////////////////////////////////////////
+ // Module interface
+ 
+-// TODO(yuriks): Move to kernel
+-void AddNamedPort(std::string name, SharedPtr<ClientPort> port) {
+-    g_kernel_named_ports.emplace(std::move(name), std::move(port));
+-}
+-
+ static bool AttemptLLE(const ServiceModuleInfo& service_module) {
+     if (!Settings::values.lle_modules.at(service_module.name))
+         return false;
+@@ -247,10 +240,4 @@ void Init(Core::System& core) {
+     LOG_DEBUG(Service, "initialized OK");
+ }
+ 
+-/// Shutdown ServiceManager
+-void Shutdown() {
+-
+-    g_kernel_named_ports.clear();
+-    LOG_DEBUG(Service, "shutdown OK");
+-}
+ } // namespace Service
+diff --git a/src/core/hle/service/service.h b/src/core/hle/service/service.h
+index 5cb4fbf23e3..5f36f98deda 100644
+--- a/src/core/hle/service/service.h
++++ b/src/core/hle/service/service.h
+@@ -8,7 +8,6 @@
+ #include <cstddef>
+ #include <functional>
+ #include <string>
+-#include <unordered_map>
+ #include <boost/container/flat_map.hpp>
+ #include "common/common_types.h"
+ #include "core/hle/kernel/hle_ipc.h"
+@@ -187,12 +186,6 @@ class ServiceFramework : public ServiceFrameworkBase {
+ /// Initialize ServiceManager
+ void Init(Core::System& system);
+ 
+-/// Shutdown ServiceManager
+-void Shutdown();
+-
+-/// Map of named ports managed by the kernel, which can be retrieved using the ConnectToPort SVC.
+-extern std::unordered_map<std::string, Kernel::SharedPtr<Kernel::ClientPort>> g_kernel_named_ports;
+-
+ struct ServiceModuleInfo {
+     std::string name;
+     u64 title_id;
+@@ -201,7 +194,4 @@ struct ServiceModuleInfo {
+ 
+ extern const std::array<ServiceModuleInfo, 40> service_module_map;
+ 
+-/// Adds a port to the named port table
+-void AddNamedPort(std::string name, Kernel::SharedPtr<Kernel::ClientPort> port);
+-
+ } // namespace Service

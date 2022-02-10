@@ -1,0 +1,39 @@
+From 35c3ca995cd68f6c827599146c42c7aebfac1567 Mon Sep 17 00:00:00 2001
+From: Hamish Milne <hamishmilne83@gmail.com>
+Date: Fri, 17 Jan 2020 01:34:03 +0000
+Subject: [PATCH 15/23] Fixed a bug (??) in arm_dynarmic where PageTableChanged
+ could reset the CPU context
+
+---
+ src/core/arm/dynarmic/arm_dynarmic.cpp | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/src/core/arm/dynarmic/arm_dynarmic.cpp b/src/core/arm/dynarmic/arm_dynarmic.cpp
+index eb3295956..b6494d40e 100644
+--- a/src/core/arm/dynarmic/arm_dynarmic.cpp
++++ b/src/core/arm/dynarmic/arm_dynarmic.cpp
+@@ -283,15 +283,21 @@ void ARM_Dynarmic::InvalidateCacheRange(u32 start_address, std::size_t length) {
+ 
+ void ARM_Dynarmic::PageTableChanged() {
+     current_page_table = memory.GetCurrentPageTable();
++    Dynarmic::A32::Context ctx{};
++    if (jit) {
++        jit->SaveContext(ctx);
++    }
+ 
+     auto iter = jits.find(current_page_table);
+     if (iter != jits.end()) {
+         jit = iter->second.get();
++        jit->LoadContext(ctx);
+         return;
+     }
+ 
+     auto new_jit = MakeJit();
+     jit = new_jit.get();
++    jit->LoadContext(ctx);
+     jits.emplace(current_page_table, std::move(new_jit));
+ }
+ 
+-- 
+2.33.0
+

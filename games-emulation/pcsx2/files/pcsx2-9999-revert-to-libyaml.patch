@@ -1,0 +1,80 @@
+From 73015854abad295d5e36bebc7bd28052db66a9f2 Mon Sep 17 00:00:00 2001
+From: Steven Newbury <steve@snewbury.org.uk>
+Date: Thu, 6 Jan 2022 15:23:26 +0000
+Subject: [PATCH] Revert "cmake: support `rapidyaml`"
+
+This reverts commit 4d4b24f8b0d203d089dfbda976ff59203906d42a.
+---
+ build.sh                   |  2 +-
+ cmake/SearchForStuff.cmake | 21 +++++++++++++--------
+ pcsx2/CMakeLists.txt       |  2 +-
+ 3 files changed, 15 insertions(+), 10 deletions(-)
+
+diff --git a/build.sh b/build.sh
+index 72537b587..79d02cb5c 100755
+--- a/build.sh
++++ b/build.sh
+@@ -226,7 +226,7 @@ for ARG in "$@"; do
+             echo
+             echo "** Distribution Compatibilities **"
+             echo "--no-portaudio  : Skip portaudio for SPU2."
+-            echo "--use-system-yaml  : Use system rapidyaml library"
++            echo "--use-system-yaml  : Use the system version of yaml-cpp, if available."
+             echo
+             echo "** Expert Developer option **"
+             echo "--gtk2          : use GTK 2 instead of GTK 3"
+diff --git a/cmake/SearchForStuff.cmake b/cmake/SearchForStuff.cmake
+index b0d6cd50f..e89af9c91 100644
+--- a/cmake/SearchForStuff.cmake
++++ b/cmake/SearchForStuff.cmake
+@@ -214,21 +214,26 @@ else()
+ endif()
+ 
+ if(USE_SYSTEM_YAML)
+-	find_package(ryml REQUIRED)
+-	if(NOT ryml_FOUND)
+-		message(STATUS "No system rapidyaml was found, using the submodule in the 3rdparty directory")
++	find_package(yaml-cpp "0.6.3" QUIET)
++	if(NOT yaml-cpp_FOUND)
++		message(STATUS "No system yaml-cpp was found")
+ 		set(USE_SYSTEM_YAML OFF)
+ 	else()
+-		message(STATUS "Found rapidyaml: ${rapidyaml_VERSION}")
++		message(STATUS "Found yaml-cpp: ${yaml-cpp_VERSION}")
++		message(STATUS "Note that the latest release of yaml-cpp is very outdated, and the bundled submodule in the repo has over a year of bug fixes and as such is preferred.")
+ 	endif()
+ endif()
+ 
+ if(NOT USE_SYSTEM_YAML)
+-	if(EXISTS "${CMAKE_SOURCE_DIR}/3rdparty/rapidyaml/rapidyaml/CMakeLists.txt")
+-		message(STATUS "Using bundled rapidyaml")
+-		add_subdirectory(3rdparty/rapidyaml/rapidyaml EXCLUDE_FROM_ALL)
++	if(EXISTS "${CMAKE_SOURCE_DIR}/3rdparty/yaml-cpp/yaml-cpp/CMakeLists.txt")
++		message(STATUS "Using bundled yaml-cpp")
++		add_subdirectory(3rdparty/yaml-cpp/yaml-cpp EXCLUDE_FROM_ALL)
++		if (NOT MSVC)
++			# Remove once https://github.com/jbeder/yaml-cpp/pull/815 is merged
++			target_compile_options(yaml-cpp PRIVATE -Wno-shadow)
++		endif()
+ 	else()
+-		message(FATAL_ERROR "No bundled rapidyaml was found")
++		message(FATAL_ERROR "No bundled yaml-cpp was found")
+ 	endif()
+ endif()
+ 
+diff --git a/pcsx2/CMakeLists.txt b/pcsx2/CMakeLists.txt
+index c0e8502a9..086501f8d 100644
+--- a/pcsx2/CMakeLists.txt
++++ b/pcsx2/CMakeLists.txt
+@@ -1401,7 +1401,7 @@ target_link_libraries(PCSX2_FLAGS INTERFACE
+ 	glad
+ 	imgui
+ 	fmt::fmt
+-	ryml
++	yaml-cpp
+ 	chdr-static
+ 	wxWidgets::all
+ 	ZLIB::ZLIB
+-- 
+2.34.1
+

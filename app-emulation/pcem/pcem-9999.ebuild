@@ -4,7 +4,7 @@
 EAPI=7
 
 WX_GTK_VER="3.0-gtk3"
-inherit autotools desktop flag-o-matic wxwidgets
+inherit cmake desktop flag-o-matic wxwidgets
 
 DESCRIPTION="A PC emulator that specializes in running old operating systems and software"
 HOMEPAGE="
@@ -37,13 +37,7 @@ BDEPEND="virtual/pkgconfig"
 
 DOCS=( "README.md" "TESTED.md" )
 
-PATCHES=( "${FILESDIR}/${PN}-17-respect-cflags.patch" )
-
-src_prepare() {
-	default
-
-	eautoreconf
-}
+#PATCHES=( "${FILESDIR}/${PN}-17-respect-cflags.patch" )
 
 src_configure() {
 	setup-wxwidgets
@@ -52,23 +46,24 @@ src_configure() {
 	# See https://pcem-emulator.co.uk/phpBB3/viewtopic.php?f=3&t=3443
 	append-cflags -fcommon
 
-	local myeconfargs=(
-		--enable-release-build
-		$(use_enable alsa)
-		$(use_enable networking)
-		--with-wx-config="${WX_CONFIG}"
+	local mycmakeargs=(
+		-DUSE_ALSA=$(usex alsa)
+		-DUSE_NETWORKING=$(usex networking)
 	)
 
-	econf "${myeconfargs[@]}"
+	cmake_src_configure "${mycmakeargs[@]}"
 }
 
 src_install() {
 	default
 
+	dolib.so ${BUILD_DIR}/src/*.so
+	dobin ${BUILD_DIR}/src/pcem
+
 	insinto /usr/share/pcem
 	doins -r configs nvr roms
 
-	newicon src/icons/32x32/motherboard.png pcem.png
+	newicon src/wx-ui/icons/32x32/motherboard.png pcem.png
 	make_desktop_entry "pcem" "PCem" pcem "Development;Utility"
 
 	einstalldocs
