@@ -4,7 +4,7 @@
 EAPI=7
 
 WX_GTK_VER="3.0-gtk3"
-inherit cmake desktop flag-o-matic wxwidgets
+inherit desktop flag-o-matic wxwidgets meson
 
 DESCRIPTION="A PC emulator that specializes in running old operating systems and software"
 HOMEPAGE="
@@ -37,33 +37,26 @@ BDEPEND="virtual/pkgconfig"
 
 DOCS=( "README.md" "TESTED.md" )
 
-#PATCHES=( "${FILESDIR}/${PN}-17-respect-cflags.patch" )
-
 src_configure() {
 	setup-wxwidgets
 
 	# Does not compile with -fno-common.
 	# See https://pcem-emulator.co.uk/phpBB3/viewtopic.php?f=3&t=3443
 	append-cflags -fcommon
+	append-cppflags -DRELEASE_BUILD
 
-	local mycmakeargs=(
-		-DUSE_ALSA=$(usex alsa)
-		-DUSE_NETWORKING=$(usex networking)
+	local mymesonargs=(
+		-Duse-alsa=$(usex alsa true false)
+		-Duse-networking=$(usex networking true false)
+		-Dallow-experimental-code=true
 	)
 
-	cmake_src_configure "${mycmakeargs[@]}"
+	meson_src_configure "${mymesonargs[@]}"
 }
 
 src_install() {
-	default
+	meson_src_install
 
-	dolib.so ${BUILD_DIR}/src/*.so
-	dobin ${BUILD_DIR}/src/pcem
-
-	insinto /usr/share/pcem
-	doins -r configs nvr roms
-
-	newicon src/wx-ui/icons/32x32/motherboard.png pcem.png
 	make_desktop_entry "pcem" "PCem" pcem "Development;Utility"
 
 	einstalldocs
